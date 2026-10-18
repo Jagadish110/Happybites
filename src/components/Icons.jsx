@@ -143,6 +143,15 @@ export function SearchIcon(props) {
   )
 }
 
+export function PencilIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" {...stroke} {...props} aria-hidden="true">
+      <path d="M4 20h4L19.5 8.5a2.5 2.5 0 0 0-3.5-3.5L4.5 16.5 4 20Z" />
+      <path d="m14.5 6.5 3 3" />
+    </svg>
+  )
+}
+
 export function CloseIcon(props) {
   return (
     <svg viewBox="0 0 24 24" {...stroke} {...props} aria-hidden="true">

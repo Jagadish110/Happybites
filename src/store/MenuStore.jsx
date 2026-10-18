@@ -32,6 +32,13 @@ export function MenuProvider({ children }) {
     addItem: (item) =>
       setState((s) => ({ ...s, items: [{ ...item, id: 'item-' + Date.now() }, ...s.items] })),
 
+    /** Change a dish in place — name, price, category, photo… */
+    updateItem: (id, patch) =>
+      setState((s) => ({
+        ...s,
+        items: s.items.map((i) => (i.id === id ? { ...i, ...patch } : i)),
+      })),
+
     toggleItem: (id) =>
       setState((s) => ({
         ...s,
