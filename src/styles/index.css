@@ -907,3 +907,21 @@ h1,h2,h3{font-family:var(--font-display);letter-spacing:-.4px}
 .brand-logo{height:46px;width:auto;display:block;flex:0 0 auto}
 .parent-bar .brand-logo,.admin-bar .brand-logo{height:40px}
 @media (max-width:620px){ .brand-logo{height:38px} }
+
+/* ---- menu search ---- */
+.search{position:relative;display:flex;align-items:center;flex:0 1 260px;min-width:160px}
+.search .search-ico{position:absolute;left:14px;width:17px;height:17px;color:var(--ink-faint);pointer-events:none}
+.search input{width:100%;border:0;border-radius:999px;background:#fff;box-shadow:var(--shadow-bar);
+  padding:11px 38px 11px 39px;font:inherit;font-size:14px;font-weight:500;color:var(--ink);outline:none;
+  transition:box-shadow .16s ease}
+.search input::placeholder{color:var(--ink-faint);font-weight:500}
+.search input:focus{box-shadow:0 0 0 2px var(--red),var(--shadow-bar)}
+.search input::-webkit-search-cancel-button{display:none}
+.search-clear{position:absolute;right:9px;width:24px;height:24px;border:0;border-radius:50%;cursor:pointer;
+  background:var(--red-soft);color:var(--red-deep);display:grid;place-items:center;padding:0}
+.search-clear svg{width:13px;height:13px}
+.search-clear:hover{background:var(--red);color:#fff}
+
+@media (max-width:900px){
+  .search{order:6;flex:1 1 100%;min-width:0}
+}

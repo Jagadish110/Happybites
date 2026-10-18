@@ -134,6 +134,15 @@ export function ChevronIcon(props) {
   )
 }
 
+export function SearchIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" {...stroke} {...props} aria-hidden="true">
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="m16 16 4.5 4.5" />
+    </svg>
+  )
+}
+
 export function CloseIcon(props) {
   return (
     <svg viewBox="0 0 24 24" {...stroke} {...props} aria-hidden="true">

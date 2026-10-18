@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import MenuSection from '../components/MenuSection.jsx'
 import OrderModal from '../components/OrderModal.jsx'
 import CardScanner from '../components/CardScanner.jsx'
 import NavLogins from '../components/NavLogins.jsx'
 import OfferSection from '../components/OfferSection.jsx'
-import { CategoryIcon } from '../components/Icons.jsx'
+import { CategoryIcon, CloseIcon, SearchIcon } from '../components/Icons.jsx'
 import { CATEGORIES, findChildByCard } from '../data/menu.js'
 import { useMenu } from '../store/MenuStore.jsx'
 
@@ -13,6 +13,8 @@ import { useMenu } from '../store/MenuStore.jsx'
 export default function CounterPage() {
   const { items, liveOffers } = useMenu()
   const [cat, setCat] = useState('all')
+  const [query, setQuery] = useState('')
+  const searchRef = useRef(null)
   const [order, setOrder] = useState({})
   const [orderOpen, setOrderOpen] = useState(false)
   const [scanning, setScanning] = useState(false)
@@ -80,6 +82,28 @@ export default function CounterPage() {
     setOrder({})
   }
 
+  // "/" puts the cursor in the search box, so staff never reach for the mouse
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === '/' && document.activeElement?.tagName !== 'INPUT') {
+        e.preventDefault()
+        searchRef.current?.focus()
+      }
+      if (e.key === 'Escape' && query) setQuery('')
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [query])
+
+  const term = query.trim().toLowerCase()
+  const matches = useMemo(() => {
+    if (!term) return []
+    const label = (i) => CATEGORIES.find((c) => c.id === i.cat)?.name || ''
+    return items.filter((i) =>
+      [i.name, i.note || '', label(i)].join(' ').toLowerCase().includes(term)
+    )
+  }, [items, term])
+
   const byCat = (c) => items.filter((i) => i.cat === c)
   const featured = items.filter((i) => i.featured)
   const showAll = cat === 'all'
@@ -110,11 +134,43 @@ export default function CounterPage() {
             ))}
           </nav>
 
+          <div className="search">
+            <SearchIcon className="search-ico" />
+            <input
+              ref={searchRef}
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search a dish…  (press /)"
+              aria-label="Search the menu"
+            />
+            {query && (
+              <button className="search-clear" onClick={() => setQuery('')} aria-label="Clear search">
+                <CloseIcon />
+              </button>
+            )}
+          </div>
+
           <NavLogins />
         </div>
       </header>
 
       <div className="page counter-page">
+        {term ? (
+          matches.length ? (
+            <MenuSection
+              id="search" title="Results" accent={`for “${query.trim()}”`}
+              script={`${matches.length} dish${matches.length === 1 ? '' : 'es'}`}
+              tone="plain" items={matches} order={order} onAdd={add} onRemove={remove}
+            />
+          ) : (
+            <p className="empty">
+              Nothing matches “{query.trim()}”.<br />
+              <span className="muted">Try a shorter word, like “tea” or “rice”.</span>
+            </p>
+          )
+        ) : (
+        <>
         <OfferSection
           offers={cat === 'all' ? liveOffers : liveOffers.filter((o) => o.cat === cat)}
           order={order} onAdd={add} onRemove={remove}
@@ -139,6 +195,8 @@ export default function CounterPage() {
         {show('bowls') && (
           <MenuSection id="bowls" title="Healthy" accent="Bowls" script="nutritious" icon="bowl" tone="fresh"
             items={byCat('bowls')} order={order} onAdd={add} onRemove={remove} />
+        )}
+        </>
         )}
       </div>
 
