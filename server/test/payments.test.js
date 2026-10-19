@@ -66,7 +66,8 @@ async function call(path, { method = 'GET', body, token, raw, headers = {} } = {
 const AARAV = 'HB-2024-0518'
 const ANANYA = 'HB-2024-0732'
 const bal = (id) => db.prepare('SELECT balance_paise FROM students WHERE id = ?').get(id).balance_paise / 100
-const tea = (qty) => ({ id: 't1', name: 'Tea', price: 12, qty, cat: 'tea' })
+const dish = (id, qty = 1, extra = {}) => ({ id, qty, ...extra })
+const tea = (qty) => dish('t1', qty)
 const topup = (amount, studentId = AARAV) =>
   call('/parent/topup/order', { method: 'POST', token: parent, body: { studentId, amount } })
 
@@ -218,13 +219,13 @@ test('charging a card takes exactly the total off the wallet, and a retry does n
   assert.equal(clash.status, 409)
 })
 
-test('malformed or tampered orders are refused and charge nothing', async () => {
+test('malformed orders are refused and charge nothing', async () => {
   const before = bal(AARAV)
   const key = (n) => `bad-order-key-${n}`
   const cases = [
-    { items: [tea(2)], total: 1, idempotencyKey: key(1) },
-    { items: [{ ...tea(1), qty: -1 }], total: -12, idempotencyKey: key(2) },
-    { items: [{ ...tea(1), price: -5 }], total: -5, idempotencyKey: key(3) },
+    { items: [{ id: 't1', qty: -1 }], total: -12, idempotencyKey: key(1) },
+    { items: [{ id: 't1', qty: 0 }], total: 0, idempotencyKey: key(2) },
+    { items: [{ id: 'nope-nope', qty: 1 }], total: 12, idempotencyKey: key(3) },
     { items: [], total: 0, idempotencyKey: key(4) },
     { items: [tea(1)], total: 12 },
   ]
@@ -237,29 +238,47 @@ test('malformed or tampered orders are refused and charge nothing', async () => 
   assert.equal(bal(AARAV), before)
 })
 
+test('the server prices the order itself: a tampered price or category changes nothing', async () => {
+  const before = bal(AARAV)
+
+  // the browser claims Tea costs 1 rupee
+  const cheap = await charge({
+    cardId: AARAV, items: [{ id: 't1', qty: 2, price: 1, name: 'Free tea', cat: 'none' }], total: 2, idempotencyKey: 'tamper-key-0001',
+  })
+  assert.equal(cheap.status, 409)
+  assert.equal(cheap.body.error, 'price_changed')
+  assert.equal(cheap.body.serverTotal, 24)
+  assert.equal(bal(AARAV), before, 'nothing may be charged for a mismatched total')
+
+  // even with the right total, a made-up category cannot dodge a block set by the parent
+  const fries = await charge({
+    cardId: ANANYA, items: [{ id: 's2', qty: 1, cat: 'tea', price: 69 }], total: 69, idempotencyKey: 'tamper-key-0002',
+  })
+  assert.equal(fries.body.error, 'category_blocked')
+})
+
 test('the parent rules are enforced at the counter', async () => {
   // Ananya has blocked snacks
-  const snack = { id: 's2', name: 'French Fries', price: 69, qty: 1, cat: 'snacks' }
-  const blocked = await charge({ cardId: ANANYA, items: [snack], total: 69, idempotencyKey: 'rule-key-0001' })
+  const blocked = await charge({ cardId: ANANYA, items: [dish('s2')], total: 69, idempotencyKey: 'rule-key-0001' })
   assert.equal(blocked.status, 403)
   assert.equal(blocked.body.error, 'category_blocked')
 
-  // 69 is under her 70 cap but over her 60 balance
-  const juice = { id: 'j1', name: 'Watermelon', price: 69, qty: 1, cat: 'juices' }
-  const poor = await charge({ cardId: ANANYA, items: [juice], total: 69, idempotencyKey: 'rule-key-0002' })
+  // a juice is 69: under her 70 cap, over her 60 balance
+  const poor = await charge({ cardId: ANANYA, items: [dish('j1')], total: 69, idempotencyKey: 'rule-key-0002' })
   assert.equal(poor.status, 402)
   assert.equal(poor.body.error, 'insufficient_balance')
   assert.equal(poor.body.short, 9)
   assert.equal(bal(ANANYA), 60)
 
-  // Aarav has a per-order cap of 90
-  const big = await charge({ cardId: AARAV, items: [{ ...tea(1), price: 100 }], total: 100, idempotencyKey: 'rule-key-0003' })
+  // Aarav has a per-order cap of 90 and a brownie is 100
+  const big = await charge({ cardId: AARAV, items: [dish('t11')], total: 100, idempotencyKey: 'rule-key-0003' })
   assert.equal(big.body.error, 'over_order_cap')
 
-  // his daily limit is 150 and he has spent 24: 90 more is fine, 40 after that is not
-  const ok = await charge({ cardId: AARAV, items: [{ ...tea(1), price: 90 }], total: 90, idempotencyKey: 'rule-key-0004' })
-  assert.equal(ok.status, 200)
-  const over = await charge({ cardId: AARAV, items: [{ ...tea(1), price: 40 }], total: 40, idempotencyKey: 'rule-key-0005' })
+  // his daily limit is 150 and he has spent 24: 80 more is fine, 40 more is fine (144), 20 more is not
+  const puffs = (n) => ({ cardId: AARAV, items: [dish('t10', n)], total: 20 * n })
+  assert.equal((await charge({ ...puffs(4), idempotencyKey: 'rule-key-0004' })).status, 200)
+  assert.equal((await charge({ ...puffs(2), idempotencyKey: 'rule-key-0005' })).status, 200)
+  const over = await charge({ ...puffs(1), idempotencyKey: 'rule-key-0006' })
   assert.equal(over.status, 403)
   assert.equal(over.body.error, 'over_daily_limit')
 })
@@ -288,6 +307,86 @@ test('a parent can change limits and block the card, and the counter follows at 
   assert.equal(on.status, 200)
 })
 
+test('the menu is public to read, owner-only to change', async () => {
+  const menu = await call('/menu')
+  assert.equal(menu.status, 200)
+  assert.equal(menu.body.items.length, 47)
+  assert.equal(menu.body.offers.length, 3)
+
+  const edit = { method: 'PUT', body: { price: 99 } }
+  assert.equal((await call('/admin/items/t1', edit)).status, 401, 'no sign-in')
+  assert.equal((await call('/admin/items/t1', { ...edit, token: counter })).status, 403, 'counter staff may not edit prices')
+  assert.equal((await call('/admin/items/t1', { ...edit, token: parent })).status, 401, 'a parent session is not staff')
+  assert.equal((await call('/menu')).body.items.find((i) => i.id === 't1').price, 12)
+})
+
+test('a price the owner changes applies to the very next charge, and history keeps the old price', async () => {
+  const put = (path, body) => call(`/admin/items/${path}`, { method: 'PUT', token: admin, body })
+  const oldSale = db.prepare("SELECT items FROM purchases WHERE client_ref = 'charge-key-0001'").get()
+
+  assert.equal((await put('t1', { price: 14 })).status, 200)
+  const stale = await charge({ cardId: AARAV, items: [tea(1)], total: 12, idempotencyKey: 'price-key-0001' })
+  assert.equal(stale.status, 409, 'a counter still showing the old price is told to refresh')
+  assert.equal(stale.body.serverTotal, 14)
+
+  const before = bal(AARAV)
+  const fresh = await charge({ cardId: AARAV, items: [tea(1)], total: 14, idempotencyKey: 'price-key-0002' })
+  assert.equal(fresh.status, 200)
+  assert.equal(bal(AARAV), before - 14)
+
+  const kept = JSON.parse(db.prepare("SELECT items FROM purchases WHERE client_ref = 'charge-key-0001'").get().items)[0].price
+  assert.equal(kept, JSON.parse(oldSale.items)[0].price, 'an earlier sale keeps the price it was made at')
+  assert.equal(kept, 12)
+
+  assert.equal((await put('t1', { price: 12 })).status, 200)
+  assert.equal((await put('t1', { price: 0 })).status, 400)
+  assert.equal((await put('t1', { price: 12.5 })).status, 400)
+  assert.equal((await put('t1', { cat: 'pizza' })).status, 400)
+  assert.equal((await put('t1', { name: '   ' })).status, 400)
+  assert.equal((await put('nope', { price: 5 })).status, 404)
+})
+
+test('a dish switched off, or an offer that has ended, cannot be sold', async () => {
+  const off = (id, available) => call(`/admin/items/${id}/available`, { method: 'PUT', token: admin, body: { available } })
+  await off('t2', false)
+  const coffee = await charge({ cardId: AARAV, items: [dish('t2')], total: 15, idempotencyKey: 'avail-key-0001' })
+  assert.equal(coffee.status, 409)
+  assert.equal(coffee.body.error, 'item_unavailable')
+  await off('t2', true)
+  assert.equal((await charge({ cardId: AARAV, items: [dish('t2')], total: 15, idempotencyKey: 'avail-key-0002' })).status, 200)
+
+  const combo = { cardId: AARAV, items: [dish('o1', 1, { offer: true })], total: 28 }
+  assert.equal((await charge({ ...combo, idempotencyKey: 'avail-key-0003' })).status, 200, 'a live offer sells at its offer price')
+
+  await call('/admin/offers/o1/active', { method: 'PUT', token: admin, body: { active: false } })
+  const ended = await charge({ ...combo, idempotencyKey: 'avail-key-0004' })
+  assert.equal(ended.status, 409)
+  assert.equal(ended.body.error, 'item_unavailable')
+  await call('/admin/offers/o1/active', { method: 'PUT', token: admin, body: { active: true } })
+})
+
+test('the owner can add a dish and an offer, with sensible validation', async () => {
+  const post = (path, body) => call(path, { method: 'POST', token: admin, body })
+
+  assert.equal((await post('/admin/items', { name: '', price: 20, cat: 'tea' })).status, 400)
+  assert.equal((await post('/admin/items', { name: 'Odd', price: -1, cat: 'tea' })).status, 400)
+  assert.equal((await post('/admin/items', { name: 'Odd', price: 20, cat: 'nope' })).status, 400)
+  assert.equal((await post('/admin/items', { name: 'Odd', price: 20, cat: 'tea', image: 'javascript:alert(1)' })).status, 400)
+
+  const photo = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBD'
+  const made = await post('/admin/items', { name: 'Mysore Bonda', price: 25, cat: 'tea', type: 'veg', note: '3 pieces', image: photo })
+  assert.equal(made.status, 200)
+  const menu = (await call('/menu')).body
+  assert.equal(menu.items[0].id, made.body.item.id, 'new dishes appear first')
+  assert.equal(menu.items[0].image, photo)
+
+  const sold = await charge({ cardId: AARAV, items: [dish(made.body.item.id, 2)], total: 50, idempotencyKey: 'new-key-0001' })
+  assert.equal(sold.status, 200)
+
+  assert.equal((await post('/admin/offers', { title: 'Exam week', price: 40, was: 50, cat: 'tea', detail: 'Tea + Puff' })).status, 200)
+  assert.equal((await post('/admin/offers', { title: 'Bad', price: 0, cat: 'tea' })).status, 400)
+})
+
 test('the ledger always adds up to the balance, and the owner report matches it', async () => {
   for (const id of [AARAV, ANANYA]) {
     const rows = db.prepare('SELECT kind, amount_paise FROM wallet_ledger WHERE student_id = ?').all(id)
@@ -302,7 +401,9 @@ test('the ledger always adds up to the balance, and the owner report matches it'
   assert.equal(s.wallet.collected, 700, 'only the two settled payments (300 + 400) were collected via Razorpay')
   assert.equal(s.wallet.spent, purchases.paise / 100)
   assert.equal(s.wallet.outstanding, bal(AARAV) + bal(ANANYA))
-  assert.equal(s.topSellers[0].name, 'Tea')
+  const sold = s.topSellers.map((t) => t.sold)
+  assert.deepEqual(sold, [...sold].sort((a, b) => b - a), 'best sellers are listed most-sold first')
+  assert.equal(s.topSellers[0].name, 'Veg Puff', 'six puffs were sold in the rules test')
   assert.equal(s.trends.daily.bars.length, 7)
   assert.equal(s.trends.daily.bars.at(-1).v, s.today.revenue)
 })

@@ -91,6 +91,26 @@ export const api = {
     },
   },
 
+  menu: () => request('/menu'),
+
+  admin: {
+    async createItem(fields) {
+      return (await request('/admin/items', { method: 'POST', body: fields, as: 'staff' })).item
+    },
+    async updateItem(id, fields) {
+      return (await request(`/admin/items/${id}`, { method: 'PUT', body: fields, as: 'staff' })).item
+    },
+    async setAvailable(id, available) {
+      return (await request(`/admin/items/${id}/available`, { method: 'PUT', body: { available }, as: 'staff' })).item
+    },
+    async createOffer(fields) {
+      return (await request('/admin/offers', { method: 'POST', body: fields, as: 'staff' })).offer
+    },
+    async setOfferActive(id, active) {
+      return (await request(`/admin/offers/${id}/active`, { method: 'PUT', body: { active }, as: 'staff' })).offer
+    },
+  },
+
   charge: (payload) => request('/charge', { method: 'POST', body: payload, as: 'staff' }),
   adminSummary: () => request('/admin/summary', { as: 'staff' }),
 }

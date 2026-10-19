@@ -13,7 +13,7 @@ import { useMenu } from '../store/MenuStore.jsx'
 
 /** Canteen counter. Staff build an order with + / −, then charge the card. */
 export default function CounterPage() {
-  const { items, liveOffers } = useMenu()
+  const { items, liveOffers, ready, error: menuError, reload } = useMenu()
   const [cat, setCat] = useState('all')
   const [query, setQuery] = useState('')
   const searchRef = useRef(null)
@@ -70,6 +70,32 @@ export default function CounterPage() {
   const count = lines.reduce((n, l) => n + l.qty, 0)
   const total = lines.reduce((n, l) => n + l.qty * l.item.price, 0)
 
+  // The menu can change while an order is being built (the owner edits a price, a dish
+  // sells out). Re-price the basket from the latest menu and drop what is no longer sold.
+  useEffect(() => {
+    if (!ready) return
+    setOrder((o) => {
+      let changed = false
+      const next = {}
+      for (const [slot, pick] of Object.entries(o)) {
+        const id = pick.item.id
+        const fresh = pick.item.isOffer
+          ? liveOffers.find((x) => x.id === id)
+          : items.find((x) => x.id === id)
+        if (!fresh || fresh.soldOut) { changed = true; continue }
+
+        const name = pick.item.isOffer ? fresh.title : fresh.name
+        if (fresh.price !== pick.item.price || name !== pick.item.name) {
+          changed = true
+          next[slot] = { ...pick, item: { ...pick.item, name, price: fresh.price, cat: fresh.cat } }
+        } else {
+          next[slot] = pick
+        }
+      }
+      return changed ? next : o
+    })
+  }, [items, liveOffers, ready])
+
   // Charging starts by proving who is at the till, then scanning the student's card.
   // One id per order attempt, so a retry after a dropped connection cannot charge twice.
   const charge = () => {
@@ -88,9 +114,7 @@ export default function CounterPage() {
         cardId,
         total,
         idempotencyKey: attemptKey.current,
-        items: lines.map(({ item, qty }) => ({
-          id: String(item.id), name: item.name, price: item.price, qty, cat: item.cat || '',
-        })),
+        items: lines.map(({ item, qty }) => ({ id: String(item.id), qty, offer: Boolean(item.isOffer) })),
       })
       attemptKey.current = ''
       setOrder({})
@@ -106,6 +130,10 @@ export default function CounterPage() {
         setSigningIn(true)                       // the shift session ended; sign in and carry on
         return
       }
+      if (err.code === 'price_changed' || err.code === 'item_unavailable') {
+        attemptKey.current = ''
+        reload()                                   // pull the latest prices; the basket re-prices itself
+      }
       const unsure = err.code === 'network'
       setResult({
         status: 'fail',
@@ -115,7 +143,7 @@ export default function CounterPage() {
           : err.message,
       })
     }
-  }, [lines, total])
+  }, [lines, total, reload])
 
   // a different basket is a different payment
   useEffect(() => { attemptKey.current = '' }, [total, count])
@@ -194,7 +222,16 @@ export default function CounterPage() {
       </header>
 
       <div className="page counter-page">
-        {term ? (
+        {!ready ? (
+          <div className="empty">
+            {menuError ? (
+              <>
+                <p>Could not load the menu.<br /><span className="muted">{menuError}</span></p>
+                <button className="btn" onClick={reload}>Try again</button>
+              </>
+            ) : 'Loading the menu…'}
+          </div>
+        ) : term ? (
           matches.length ? (
             <MenuSection
               id="search" title="Results" accent={`for “${query.trim()}”`}

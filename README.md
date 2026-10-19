@@ -30,7 +30,7 @@ Open http://localhost:5180/. Without a `.env` it still runs in demo mode (see
 | --- | --- | --- |
 | `/` | Counter staff | Tap dishes, search, then **Scan card & charge**. Staff sign in once per shift; the camera reads the student's QR (student ID), with manual entry as a fallback. |
 | `/parent` | Parents | Sign in with the secret code on the back of the card. See the wallet and history, **top up through Razorpay**, set daily / per-order limits and blocked categories, block the card. |
-| `/admin` | Owner | Owner PIN only. Today's sales, all-time earnings, day / week / month trend, most-selling items, and **where the money is**. Menu and offers editing. |
+| `/admin` | Owner | Owner PIN only. Today's sales, all-time earnings, day / week / month trend, most-selling items, and **where the money is**. Add and edit dishes (name, price, photo), mark sold out, create and switch offers. |
 
 ### Demo logins (dev only)
 
@@ -56,6 +56,14 @@ In production (`NODE_ENV=production`) none of these exist: set `COUNTER_PIN`,
    wallet and records a sale. This is a ledger entry: the cash is already in your
    bank from step 2. The admin **Where the money is** panel shows *paid in*,
    *spent at the counter* and *still in wallets* so the books can be checked.
+
+**The server prices every order.** The counter sends only which dishes and how many,
+plus the total it showed the customer. The server looks up the current price,
+category and availability itself, and ignores any name, price or category the browser
+might send. If the owner changed a price in the meantime the charge is refused with
+"Prices have changed" and the counter refreshes, so a stale screen can never charge
+the wrong amount, and a tampered request cannot be cheaper or sidestep a parent's
+blocked category.
 
 Every rule a parent sets (daily limit, per-order cap, blocked categories, blocked
 card) is enforced on the server at charge time, inside the same transaction as the
@@ -84,13 +92,21 @@ the balance (tested).
 - **Use HTTPS.** Browsers only allow the camera on `https` or `localhost`.
 - Set `NODE_ENV=production`, a long random `APP_SECRET`, `COUNTER_PIN` and `ADMIN_PIN`.
 - Back up `server/data/happybites.db` (it is the ledger). It is git-ignored.
-- Menu prices and offers still live in each browser (localStorage), and the counter
-  sends the prices it shows. Move the menu to the server before running several
-  counters, so every till shows the same prices and the server can price orders itself.
+- Dish photos are stored in the database and sent with the menu, which is fine for a
+  canteen-sized menu. If it grows to hundreds of photos, move them to files.
 - Students are demo data. A production import (name, class, student ID, secret code)
   and printed cards with the QR are still to do.
 - Not built yet: refunds, receipts / SMS, Razorpay payouts reconciliation reports,
   card re-issue when a secret code is lost.
+
+## The menu
+
+Dishes, prices, sold-out flags and offers live in the server database, seeded once from
+`server/menu-seed.json` (the printed Happy Bites board). The owner changes them in
+`/admin`; every counter picks the change up within 30 seconds, or at once when its tab
+regains focus. Orders already in a basket are re-priced automatically, and a dish that
+sells out or an offer that ends drops out of the basket. Past sales keep the price they
+were made at.
 
 ## Layout
 
@@ -98,6 +114,8 @@ the balance (tested).
 server/            Express API, SQLite ledger, Razorpay, tests
   wallet.js        top-ups and charges (all the money rules)
   razorpay.js      orders and signature checks
+  menu.js          dishes, offers and server-side order pricing
+  menu-seed.json   the starting menu
   reports.js       owner dashboard queries
   test/            payment tests against a fake Razorpay
 src/               React app

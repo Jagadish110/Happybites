@@ -9,6 +9,9 @@ import {
 } from './wallet.js'
 import * as rzp from './razorpay.js'
 import { adminSummary } from './reports.js'
+import {
+  createItem, createOffer, menuSnapshot, priceOrder, setItemAvailable, setOfferActive, updateItem,
+} from './menu.js'
 
 export const api = express.Router()
 
@@ -168,7 +171,34 @@ api.post('/staff/logout', requireStaff('counter', 'admin'), (req, res) => {
   res.json({ ok: true })
 })
 
+// ---- the menu: everyone may read it, only the owner may change it --------------
+api.get('/menu', (_req, res) => res.json(menuSnapshot()))
+
+// Photos arrive inside the JSON, so these routes get a larger body limit. The
+// owner check runs first, so only a signed-in owner can send a large body.
+const ownerJson = [requireStaff('admin'), express.json({ limit: '600kb' })]
+const body = (req) => req.body || {}
+
+api.post('/admin/items', ownerJson, (req, res) => res.json({ item: createItem(body(req)) }))
+api.put('/admin/items/:id', ownerJson, (req, res) => res.json({ item: updateItem(req.params.id, body(req)) }))
+api.put('/admin/items/:id/available', ownerJson, (req, res) => {
+  if (typeof body(req).available !== 'boolean') throw bad('invalid_request', 'available must be true or false')
+  res.json({ item: setItemAvailable(req.params.id, body(req).available) })
+})
+
+api.post('/admin/offers', ownerJson, (req, res) => res.json({ offer: createOffer(body(req)) }))
+api.put('/admin/offers/:id/active', ownerJson, (req, res) => {
+  if (typeof body(req).active !== 'boolean') throw bad('invalid_request', 'active must be true or false')
+  res.json({ offer: setOfferActive(req.params.id, body(req).active) })
+})
+
 // ---- counter: take money off a scanned card --------------------------------
+/**
+ * The counter sends only WHICH dishes and how many ([{ id, qty, offer? }]) and the
+ * total it showed the customer. The server prices the order from its own menu; if
+ * that differs from what the screen showed, nothing is charged and the counter is
+ * told to refresh.
+ */
 api.post('/charge', requireStaff('counter', 'admin'), (req, res) => {
   const { cardId, items, total, idempotencyKey } = req.body || {}
 
@@ -178,22 +208,25 @@ api.post('/charge', requireStaff('counter', 'admin'), (req, res) => {
   if (!Array.isArray(items) || items.length === 0 || items.length > 60) {
     throw bad('invalid_order', 'The order is empty')
   }
-  const clean = items.map((i) => {
-    if (!text(i?.name) || !isInt(i?.price, 0, 5000) || !isInt(i?.qty, 1, 99)) {
-      throw bad('invalid_item', 'One of the items in the order is not valid')
-    }
-    return { id: text(i.id, 40), name: text(i.name, 80), price: i.price, qty: i.qty, cat: text(i.cat, 20) }
+  const lines = items.map((i) => {
+    if (!text(i?.id, 60) || !isInt(i?.qty, 1, 99)) throw bad('invalid_item', 'One of the items in the order is not valid')
+    return { id: text(i.id, 60), qty: i.qty, offer: i.offer === true }
   })
 
-  const sum = clean.reduce((n, i) => n + i.price * i.qty, 0)
-  if (!isInt(total, 1, config.maxOrderRupees) || sum !== total) {
-    throw bad('total_mismatch', 'The total does not match the items')
+  const priced = priceOrder(lines)
+  const serverTotal = priced.reduce((n, i) => n + i.price * i.qty, 0)
+
+  if (!isInt(serverTotal, 1, config.maxOrderRupees)) throw bad('invalid_order', 'That order total is not allowed')
+  if (total !== serverTotal) {
+    throw new HttpError(409, 'price_changed',
+      'Prices have changed since this screen loaded. The board has been refreshed, so check the order and try again.',
+      { serverTotal })
   }
 
   const out = chargeStudent({
     cardId: text(cardId, 40).toUpperCase(),
-    items: clean,
-    totalPaise: total * 100,
+    items: priced,
+    totalPaise: serverTotal * 100,
     clientRef,
     staff: req.staff,
   })
@@ -202,7 +235,7 @@ api.post('/charge', requireStaff('counter', 'admin'), (req, res) => {
     ok: true,
     purchaseId: out.purchaseId,
     replayed: out.replayed,
-    total,
+    total: serverTotal,
     student: { id: out.student.id, name: out.student.name, balance: out.student.balance_paise / 100 },
   })
 })

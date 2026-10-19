@@ -103,7 +103,7 @@ function ItemForm({ form, setForm, onSave, onCancel, saveLabel, imgError, setImg
 
 export default function Items() {
   const { say } = useOutletContext()
-  const { items, addItem, updateItem, toggleItem } = useMenu()
+  const { items, ready, error, addItem, updateItem, toggleItem } = useMenu()
 
   const [form, setForm] = useState(BLANK)
   const [adding, setAdding] = useState(false)
@@ -136,33 +136,59 @@ export default function Items() {
     })
   }
 
-  const saveNew = () => {
-    addItem({
-      name: form.name.trim(),
-      price: Number(form.price),
-      cat: form.cat,
-      type: form.type,
-      note: form.note.trim(),
-      emoji: form.emoji || '🍽️',
-      image: form.image || '',
-    })
-    say(`${form.name.trim()} added to ${catName(form.cat)}`)
-    setForm(BLANK)
-    setAdding(false)
+  const saveNew = async () => {
+    try {
+      const made = await addItem({
+        name: form.name.trim(),
+        price: Number(form.price),
+        cat: form.cat,
+        type: form.type,
+        note: form.note.trim(),
+        emoji: form.emoji,
+        image: form.image || '',
+      })
+      say(`${made.name} added to ${catName(made.cat)}`)
+      setForm(BLANK)
+      setAdding(false)
+    } catch (err) {
+      say(err.message)
+    }
   }
 
-  const saveEdit = () => {
-    updateItem(editing.id, {
-      name: form.name.trim(),
-      price: Number(form.price),
-      cat: form.cat,
-      type: form.type,
-      note: form.note.trim(),
-      image: form.image || '',
-    })
-    say(`${form.name.trim()} updated`)
-    setEditing(null)
-    setForm(BLANK)
+  const saveEdit = async () => {
+    try {
+      const saved = await updateItem(editing.id, {
+        name: form.name.trim(),
+        price: Number(form.price),
+        cat: form.cat,
+        type: form.type,
+        note: form.note.trim(),
+        image: form.image || '',
+      })
+      say(`${saved.name} updated. The counter shows it now.`)
+      setEditing(null)
+      setForm(BLANK)
+    } catch (err) {
+      say(err.message)
+    }
+  }
+
+  const flipAvailable = async (item) => {
+    try {
+      const saved = await toggleItem(item)
+      say(saved.soldOut ? `${saved.name} marked sold out` : `${saved.name} is available again`)
+    } catch (err) {
+      say(err.message)
+    }
+  }
+
+  if (!ready) {
+    return (
+      <div className="page">
+        <h1 className="page-title">Menu items</h1>
+        <p className={error ? 'form-error' : 'page-sub'}>{error || 'Loading the menu…'}</p>
+      </div>
+    )
   }
 
   return (
@@ -228,7 +254,7 @@ export default function Items() {
             <span className="muted t-cat">{catName(i.cat)}</span>
             <span className="t-price">₹{i.price}</span>
             <label className="toggle-row compact">
-              <input type="checkbox" checked={!i.soldOut} onChange={() => toggleItem(i.id)} />
+              <input type="checkbox" checked={!i.soldOut} onChange={() => flipAvailable(i)} />
               <span className="switch" aria-hidden="true" />
             </label>
             <button className="row-edit" onClick={() => startEdit(i)} aria-label={`Edit ${i.name}`}>

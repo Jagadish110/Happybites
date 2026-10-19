@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { config, isProd } from './config.js'
 import { hashPin, keyed } from './security.js'
 
@@ -93,6 +94,40 @@ CREATE TABLE IF NOT EXISTS session_students (
   student_id TEXT NOT NULL REFERENCES students(id),
   PRIMARY KEY (token_hash, student_id)
 );
+
+CREATE TABLE IF NOT EXISTS menu_items (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  price      INTEGER NOT NULL CHECK (price > 0),
+  cat        TEXT NOT NULL,
+  type       TEXT NOT NULL DEFAULT 'veg',
+  note       TEXT NOT NULL DEFAULT '',
+  emoji      TEXT NOT NULL DEFAULT '',
+  icon       TEXT NOT NULL DEFAULT '',
+  image      TEXT NOT NULL DEFAULT '',
+  art        TEXT NOT NULL DEFAULT '',
+  art_props  TEXT NOT NULL DEFAULT '{}',
+  featured   INTEGER NOT NULL DEFAULT 0,
+  sold_out   INTEGER NOT NULL DEFAULT 0,
+  sort       INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS offers (
+  id         TEXT PRIMARY KEY,
+  title      TEXT NOT NULL,
+  detail     TEXT NOT NULL DEFAULT '',
+  price      INTEGER NOT NULL CHECK (price > 0),
+  was        INTEGER NOT NULL DEFAULT 0,
+  cat        TEXT NOT NULL,
+  emoji      TEXT NOT NULL DEFAULT '',
+  icon       TEXT NOT NULL DEFAULT '',
+  image      TEXT NOT NULL DEFAULT '',
+  art        TEXT NOT NULL DEFAULT '',
+  active     INTEGER NOT NULL DEFAULT 1,
+  sort       INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
 `)
 
 const nowIso = () => new Date().toISOString()
@@ -131,3 +166,34 @@ function seed() {
   }
 }
 seed()
+
+// The real Happy Bites menu is the starting point; from then on the owner edits it in the admin portal.
+function seedMenu() {
+  if (db.prepare('SELECT COUNT(*) AS n FROM menu_items').get().n) return
+  const seedFile = path.join(path.dirname(fileURLToPath(import.meta.url)), 'menu-seed.json')
+  const { items, offers } = JSON.parse(fs.readFileSync(seedFile, 'utf8'))
+  const now = nowIso()
+
+  tx(() => {
+    const addItem = db.prepare(
+      `INSERT INTO menu_items (id, name, price, cat, type, note, emoji, icon, art, art_props, featured, sold_out, sort, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    )
+    for (const i of items) {
+      addItem.run(i.id, i.name, i.price, i.cat, i.type, i.note, i.emoji, i.icon, i.art,
+        JSON.stringify(i.artProps || {}), i.featured ? 1 : 0, i.soldOut ? 1 : 0, i.sort, now)
+    }
+    // sample offers are demo content, so they are only created alongside the demo students
+    const wantDemo = process.env.HB_SEED_DEMO ? process.env.HB_SEED_DEMO === '1' : !isProd
+    if (wantDemo) {
+      const addOffer = db.prepare(
+        `INSERT INTO offers (id, title, detail, price, was, cat, emoji, icon, art, active, sort, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+      )
+      for (const o of offers) {
+        addOffer.run(o.id, o.title, o.detail, o.price, o.was, o.cat, o.emoji, o.icon, o.art, o.active ? 1 : 0, o.sort, now)
+      }
+    }
+  })
+}
+seedMenu()

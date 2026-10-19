@@ -28,7 +28,9 @@ export function createApp() {
   // The webhook needs the exact bytes Razorpay signed, so it is read raw, before JSON parsing.
   app.post('/api/razorpay/webhook', express.raw({ type: 'application/json', limit: '200kb' }), razorpayWebhook)
 
-  app.use('/api', express.json({ limit: '100kb' }), api, errorHandler)
+  // Owner routes parse their own (larger) bodies after the sign-in check, see routes.js.
+  const smallJson = express.json({ limit: '100kb' })
+  app.use('/api', (req, res, next) => (req.path.startsWith('/admin/') ? next() : smallJson(req, res, next)), api, errorHandler)
   app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found', message: 'No such endpoint' }))
 
   // After `npm run build`, this same server also hosts the website.

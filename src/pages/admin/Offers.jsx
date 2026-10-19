@@ -8,7 +8,7 @@ const BLANK = { title: '', detail: '', price: '', was: '', cat: 'tea' }
 
 export default function Offers() {
   const { say } = useOutletContext()
-  const { offers, addOffer, toggleOffer } = useMenu()
+  const { offers, ready, error, addOffer, toggleOffer } = useMenu()
   const [form, setForm] = useState(BLANK)
   const [adding, setAdding] = useState(false)
 
@@ -16,19 +16,40 @@ export default function Offers() {
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
   const valid = form.title.trim() && Number(form.price) > 0
 
-  const publish = () => {
+  const publish = async () => {
     const offer = {
       title: form.title.trim(),
-      detail: form.detail.trim() || '—',
+      detail: form.detail.trim(),
       price: Number(form.price),
       was: Number(form.was) || Number(form.price),
       cat: form.cat,
-      active: true,
     }
-    addOffer(offer)
-    setForm(BLANK)
-    setAdding(false)
-    say(`${offer.title} is now live at the counter`)
+    try {
+      await addOffer(offer)
+      setForm(BLANK)
+      setAdding(false)
+      say(`${offer.title} is now live at the counter`)
+    } catch (err) {
+      say(err.message)
+    }
+  }
+
+  const flip = async (offer) => {
+    try {
+      const saved = await toggleOffer(offer)
+      say(saved.active ? `${saved.title} is live at the counter` : `${saved.title} switched off`)
+    } catch (err) {
+      say(err.message)
+    }
+  }
+
+  if (!ready) {
+    return (
+      <div className="page">
+        <h1 className="page-title">Offers &amp; Combos</h1>
+        <p className={error ? 'form-error' : 'page-sub'}>{error || 'Loading the offers…'}</p>
+      </div>
+    )
   }
 
   return (
@@ -115,7 +136,7 @@ export default function Offers() {
               </div>
 
               <label className="toggle-row">
-                <input type="checkbox" checked={o.active} onChange={() => toggleOffer(o.id)} />
+                <input type="checkbox" checked={o.active} onChange={() => flip(o)} />
                 <span className="switch" aria-hidden="true" />
                 <span>
                   <strong>{o.active ? 'Live at counter' : 'Paused'}</strong>
