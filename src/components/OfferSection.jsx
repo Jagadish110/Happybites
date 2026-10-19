@@ -19,7 +19,7 @@ export default function OfferSection({ offers, order, onAdd, onRemove }) {
         {offers.map((o) => {
           const slot = `offer|${o.id}`
           const qty = order[slot]?.qty || 0
-          const dish = { id: o.id, name: o.title, price: o.price, emoji: o.emoji, isOffer: true }
+          const dish = { id: o.id, name: o.title, price: o.price, emoji: o.emoji, cat: o.cat, isOffer: true }
           const save = o.was - o.price
 
           return (

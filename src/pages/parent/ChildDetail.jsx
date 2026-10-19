@@ -1,11 +1,22 @@
 import { Link, useOutletContext, useParams } from 'react-router-dom'
-import { CATEGORIES, getChild } from '../../data/menu.js'
+import { CATEGORIES } from '../../data/menu.js'
+import { api } from '../../api/client.js'
 import { ArrowDownLeftIcon, UtensilsIcon, WalletIcon, SlidersIcon, ShieldIcon } from '../../components/Icons.jsx'
 
 export default function ChildDetail() {
   const { id } = useParams()
-  const { say } = useOutletContext()
-  const kid = getChild(id)
+  const { say, children, update } = useOutletContext()
+  const kid = children.find((c) => c.id === id) || children[0]
+
+  const toggleCard = async () => {
+    try {
+      const fresh = await api.parent.setCard(kid.id, !kid.cardActive)
+      update(fresh)
+      say(fresh.cardActive ? `${fresh.name}'s card is active again` : `${fresh.name}'s card is blocked at the counter`)
+    } catch (err) {
+      say(err.message)
+    }
+  }
 
   const left = Math.max(kid.dailyLimit - kid.spentToday, 0)
   const pct = Math.min((kid.spentToday / kid.dailyLimit) * 100, 100)
@@ -48,12 +59,9 @@ export default function ChildDetail() {
           <SlidersIcon width={16} height={16} />
           <span>Spending limits</span>
         </Link>
-        <button
-          className="btn ghost danger inline-btn"
-          onClick={() => say(`${kid.name}'s card would be blocked at the counter`)}
-        >
+        <button className="btn ghost danger inline-btn" onClick={toggleCard}>
           <ShieldIcon width={16} height={16} />
-          <span>Block card</span>
+          <span>{kid.cardActive ? 'Block card' : 'Unblock card'}</span>
         </button>
       </div>
 

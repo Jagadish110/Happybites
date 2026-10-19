@@ -1,7 +1,10 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowIcon, TrendIcon, ReceiptIcon, WalletIcon, UtensilsIcon, SparklesIcon } from '../../components/Icons.jsx'
-import { COUNTER_TODAY as T, getItem, LIFETIME, TOP_SELLERS, TRENDS } from '../../data/menu.js'
+import {
+  ArrowIcon, TrendIcon, ReceiptIcon, WalletIcon, UtensilsIcon, SparklesIcon, BankIcon,
+} from '../../components/Icons.jsx'
+import { api } from '../../api/client.js'
+import { useMenu } from '../../store/MenuStore.jsx'
 
 const VIEWS = [
   { id: 'daily', name: 'Daily' },
@@ -9,45 +12,74 @@ const VIEWS = [
   { id: 'monthly', name: 'Monthly' },
 ]
 
-export default function Dashboard() {
-  const [view, setView] = useState('daily')
-  const trend = TRENDS[view]
+const inr = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`
 
+export default function Dashboard() {
+  const { items } = useMenu()
+  const [data, setData] = useState(null)
+  const [error, setError] = useState('')
+  const [view, setView] = useState('daily')
+
+  const load = useCallback(() => {
+    api.adminSummary().then((d) => { setData(d); setError('') }).catch((e) => setError(e.message))
+  }, [])
+
+  useEffect(() => {
+    load()
+    const timer = window.setInterval(load, 30000)      // figures stay live while the page is open
+    return () => window.clearInterval(timer)
+  }, [load])
+
+  if (!data) {
+    return (
+      <div className="page">
+        <h1 className="page-title">Today at the counter</h1>
+        <p className={error ? 'form-error' : 'page-sub'}>{error || 'Loading the latest numbers…'}</p>
+      </div>
+    )
+  }
+
+  const { today: T, lifetime: L, wallet: W, topSellers } = data
+  const trend = data.trends[view]
   const pct = Math.min(Math.round((T.revenue / T.target) * 100), 100)
-  const peak = Math.max(...trend.bars.map((b) => b.v))
+  const peak = Math.max(...trend.bars.map((b) => b.v), 1)
   const totalTrend = trend.bars.reduce((n, b) => n + b.v, 0)
-  const topMax = Math.max(...TOP_SELLERS.map((t) => t.sold))
+  const topMax = Math.max(...topSellers.map((t) => t.sold), 1)
+  const iconFor = (row) => {
+    const item = items.find((i) => i.id === row.id) || items.find((i) => i.name === row.name)
+    return item?.image || item?.icon || null
+  }
 
   return (
     <div className="page">
       <h1 className="page-title">Today at the counter</h1>
-      <p className="page-sub">Live since 7:00 am · updates as orders are charged</p>
+      <p className="page-sub">Updates as cards are charged · refreshed every 30 seconds</p>
 
       <div className="lifetime">
         <div className="lifetime-main">
           <span className="lifetime-ico"><TrendIcon /></span>
           <div>
             <span className="lifetime-k">Total earned since day one</span>
-            <span className="lifetime-v">₹{LIFETIME.total.toLocaleString('en-IN')}</span>
-            <span className="lifetime-sub">Open since {LIFETIME.since}</span>
+            <span className="lifetime-v">{inr(L.total)}</span>
+            <span className="lifetime-sub">{L.since ? `Selling since ${L.since}` : 'No sales recorded yet'}</span>
           </div>
         </div>
         <div className="lifetime-side">
           <div className="lifetime-stat">
             <span className="stat-k">This year</span>
-            <span className="stat-v">₹{LIFETIME.thisYear.toLocaleString('en-IN')}</span>
+            <span className="stat-v">{inr(L.thisYear)}</span>
           </div>
           <div className="lifetime-stat">
             <span className="stat-k">Orders all time</span>
-            <span className="stat-v">{LIFETIME.orders.toLocaleString('en-IN')}</span>
+            <span className="stat-v">{L.orders.toLocaleString('en-IN')}</span>
           </div>
           <div className="lifetime-stat">
             <span className="stat-k">Students served</span>
-            <span className="stat-v">{LIFETIME.students.toLocaleString('en-IN')}</span>
+            <span className="stat-v">{L.students.toLocaleString('en-IN')}</span>
           </div>
           <div className="lifetime-stat">
             <span className="stat-k">Best month</span>
-            <span className="stat-v">₹{LIFETIME.bestMonth.v.toLocaleString('en-IN')}</span>
+            <span className="stat-v">{L.bestMonth ? inr(L.bestMonth.v) : '—'}</span>
           </div>
         </div>
       </div>
@@ -65,7 +97,7 @@ export default function Dashboard() {
             <span className="stat-k">Revenue</span>
             <span className="stat-icon-badge in"><WalletIcon width={17} height={17} /></span>
           </div>
-          <span className="stat-v in">₹{T.revenue.toLocaleString('en-IN')}</span>
+          <span className="stat-v in">{inr(T.revenue)}</span>
         </div>
         <div className="stat-card">
           <div className="stat-head">
@@ -79,7 +111,34 @@ export default function Dashboard() {
             <span className="stat-k">Average order</span>
             <span className="stat-icon-badge out"><SparklesIcon width={17} height={17} /></span>
           </div>
-          <span className="stat-v out">₹{T.avgOrder}</span>
+          <span className="stat-v out">{inr(T.avgOrder)}</span>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-head">
+          <h2>Where the money is</h2>
+          <span className="muted">All time</span>
+        </div>
+        <div className="money-grid">
+          <div className="money-item">
+            <span className="stat-icon-badge in"><BankIcon width={17} height={17} /></span>
+            <span className="stat-k">Paid in by parents</span>
+            <span className="stat-v in">{inr(W.collected)}</span>
+            <span className="muted">Collected through Razorpay. Razorpay pays this into your bank account on its normal settlement schedule.</span>
+          </div>
+          <div className="money-item">
+            <span className="stat-icon-badge"><ReceiptIcon width={17} height={17} /></span>
+            <span className="stat-k">Spent at the counter</span>
+            <span className="stat-v">{inr(W.spent)}</span>
+            <span className="muted">Taken off student wallets when cards were charged. This is what the canteen has earned.</span>
+          </div>
+          <div className="money-item">
+            <span className="stat-icon-badge warm"><WalletIcon width={17} height={17} /></span>
+            <span className="stat-k">Still in wallets</span>
+            <span className="stat-v out">{inr(W.outstanding)}</span>
+            <span className="muted">Paid in but not yet spent. Students can still use it, so treat it as owed.</span>
+          </div>
         </div>
       </div>
 
@@ -92,8 +151,8 @@ export default function Dashboard() {
           <div className="meter-fill" style={{ width: `${pct}%` }} />
         </div>
         <div className="range-ends" style={{ marginTop: 9 }}>
-          <span style={{ color: '#1a1a1a', fontWeight: 700 }}><strong>₹{T.revenue.toLocaleString('en-IN')}</strong> earned</span>
-          <span style={{ color: '#555', fontWeight: 700 }}>target <strong>₹{T.target.toLocaleString('en-IN')}</strong></span>
+          <span style={{ color: '#1a1a1a', fontWeight: 700 }}><strong>{inr(T.revenue)}</strong> earned</span>
+          <span style={{ color: '#555', fontWeight: 700 }}>target <strong>{inr(T.target)}</strong></span>
         </div>
       </div>
 
@@ -102,7 +161,7 @@ export default function Dashboard() {
           <div className="panel-head stacked">
             <div>
               <h2>Sales progress</h2>
-              <span className="muted">{trend.label} · ₹{totalTrend.toLocaleString('en-IN')} total</span>
+              <span className="muted">{trend.label} · {inr(totalTrend)} total</span>
             </div>
             <div className="seg">
               {VIEWS.map((v) => (
@@ -121,7 +180,7 @@ export default function Dashboard() {
             {trend.bars.map((b) => (
               <div className="bar-col" key={b.label}>
                 <span className="bar-val">₹{b.v >= 1000 ? `${(b.v / 1000).toFixed(1)}k` : b.v}</span>
-                <div className={'bar' + (b.now ? ' now' : '')} style={{ height: `${(b.v / peak) * 100}%` }} />
+                <div className={'bar' + (b.now ? ' now' : '')} style={{ height: `${Math.max((b.v / peak) * 100, 2)}%` }} />
                 <span className="bar-lbl">{b.label}</span>
               </div>
             ))}
@@ -131,31 +190,27 @@ export default function Dashboard() {
 
         <div className="panel">
           <div className="panel-head">
-            <h2>Most selling</h2>
+            <h2>Most selling today</h2>
             <Link className="link-btn" to="/admin/items">Manage items <ArrowIcon /></Link>
           </div>
-          {TOP_SELLERS.map((row, i) => {
-            const item = getItem(row.id)
-            if (!item) return null
+          {topSellers.length === 0 && <p className="muted">Nothing sold yet today.</p>}
+          {topSellers.map((row, i) => {
+            const icon = iconFor(row)
             return (
-              <div className="rank-row" key={row.id}>
+              <div className="rank-row" key={`${row.id}-${row.name}`}>
                 <span className="rank">{i + 1}</span>
                 <span className="rank-em" aria-hidden="true">
-                  {item.image || item.icon ? (
-                    <img src={item.image || item.icon} alt="" className="rank-img" />
-                  ) : (
-                    <UtensilsIcon width={18} height={18} />
-                  )}
+                  {icon ? <img src={icon} alt="" className="rank-img" /> : <UtensilsIcon width={18} height={18} />}
                 </span>
                 <div className="rank-main">
-                  <div className="rank-nm">{item.name}</div>
+                  <div className="rank-nm">{row.name}</div>
                   <div className="rank-bar">
                     <span style={{ width: `${(row.sold / topMax) * 100}%` }} />
                   </div>
                 </div>
                 <div className="rank-right">
                   <div className="rank-sold">{row.sold} sold</div>
-                  <div className="rank-rev">₹{(row.sold * item.price).toLocaleString('en-IN')}</div>
+                  <div className="rank-rev">{inr(row.revenue)}</div>
                 </div>
               </div>
             )

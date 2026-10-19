@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { MenuIcon, ShieldIcon, UsersIcon } from './Icons.jsx'
 
 /** One icon in the header; it expands to the two portals. */
-export default function NavLogins() {
+export default function NavLogins({ staff, onSignOut }) {
   const [open, setOpen] = useState(false)
   const box = useRef(null)
 
@@ -33,6 +33,16 @@ export default function NavLogins() {
 
       {open && (
         <div className="nav-pop" role="menu">
+          {staff && (
+            <div className="nav-pop-who">
+              <span>
+                <strong>{staff.name}</strong>
+                <span className="muted">{staff.id} · signed in at this counter</span>
+              </span>
+              <button className="btn ghost small" onClick={() => { setOpen(false); onSignOut() }}>Sign out</button>
+            </div>
+          )}
+
           <Link className="nav-pop-item" to="/parent" role="menuitem" onClick={() => setOpen(false)}>
             <span className="nav-pop-ico parent"><UsersIcon /></span>
             <span>

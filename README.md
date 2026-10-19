@@ -1,78 +1,107 @@
 # Happybites — campus canteen
 
-React + Vite. UI stage only: every screen runs on sample data in
-`src/data/menu.js`; nothing is wired to a backend yet.
+A prepaid canteen wallet. Parents top up their child's card with Razorpay; at the
+counter staff scan the card and the wallet is charged; the owner watches the money
+in the admin portal.
 
-Every dish has a picture in `public/icons/`, built from the supplied icon set by
-three small passes in `tools/`: `crop-icons.py` strips the sheet captions and
-neighbouring tiles, `normalise-icons.py` reframes each one so the food always
-covers the same share of the tile, and `cutout-icons.py` makes the background
-transparent so it sits cleanly on the plate. If an
-item has no picture it falls back to a drawn SVG illustration
-(`src/components/FoodArt.jsx`), then to an emoji. A photo uploaded in admin
-overrides both for that item. Long sections show two rows and a
-**Show all** toggle rather than a sideways swipe.
+React + Vite on the front, a small Node server (Express + SQLite) behind it.
 
-Styled on the **Foody** reference: warm cream ground, tomato-red accents,
-Poppins + Caveat type, and tinted dish cards with a round plate on top. The
-palette lives in the `:root` block of `src/styles/index.css` — change the tokens
-there and every screen follows.
-
-The menu is the real Happy Bites board (Sept 2026 card): **Tea & Snacks**,
-**Juices** (all ₹69, half-litre mug), **Snacks**, and the three **Healthy
-Nutritious Bowl** packs — 47 items in all.
-
-## Run
+## Run it
 
 ```bash
 npm install
-npm run dev
+cp .env.example .env        # then fill it in (see "Razorpay setup")
+npm run dev:all             # website on :5180, API on :8787
 ```
 
-Port 5173 is often taken by another project on this machine; `npm run dev -- --port 5180`
-puts it on its own port.
+Open http://localhost:5180/. Without a `.env` it still runs in demo mode (see
+"Demo logins"), but **top-ups stay off until Razorpay keys are added**.
 
-The dev server binds to all interfaces (`vite --host`), so it is reachable from a
-phone on the same Wi-Fi at `http://<your-lan-ip>:5173/`.
+| Command | What it does |
+| --- | --- |
+| `npm run dev:all` | website + API together |
+| `npm run server` | API only |
+| `npm run build` then `npm start` | one server hosting the built site and the API |
+| `npm run test:server` | the payment and wallet tests |
 
-## Three separate sides
+## The three sides
 
-| Route | Who | What it shows |
+| Route | Who | What it does |
 | --- | --- | --- |
-| `/` | Canteen staff | The counter. Tap a dish, adjust portions with + / −, open the order box in the middle of the screen and charge the student's card. The menu button (top right) expands to the two portals. |
-| `/parent` | Parents | Sign in with the **secret code** printed on the back of the child's canteen card — it resolves to their student ID. |
-| `/parent/:id` | | Child detail: card, wallet, today's limit, spend history |
-| `/parent/:id/topup` | | Add money — presets, custom amount, auto top-up, Razorpay (*Coming soon*) |
-| `/parent/:id/limits` | | Daily limit, per-order cap, which categories they may buy |
-| `/parent/activity` | | Every transaction across all linked children |
-| `/admin` | Canteen admin | Staff ID + PIN. All-time earnings since opening day, today's orders, revenue, items sold, target progress; sales progress by **day / week / month**; most-selling items |
-| `/admin/items` | | Add dishes (with a photo from the camera or device), change availability, filter by category |
-| `/admin/offers` | | Create and pause combo offers — anything switched on appears on the counter at once |
+| `/` | Counter staff | Tap dishes, search, then **Scan card & charge**. Staff sign in once per shift; the camera reads the student's QR (student ID), with manual entry as a fallback. |
+| `/parent` | Parents | Sign in with the secret code on the back of the card. See the wallet and history, **top up through Razorpay**, set daily / per-order limits and blocked categories, block the card. |
+| `/admin` | Owner | Owner PIN only. Today's sales, all-time earnings, day / week / month trend, most-selling items, and **where the money is**. Menu and offers editing. |
 
-### Demo logins
+### Demo logins (dev only)
 
-- **Parent** — card codes `KX7M2Q` (Aarav) and `PD4B9T` (Ananya). Entering a
-  second code on the Children screen links another child.
-- **Admin** — any staff ID and any 4-digit PIN.
+- Parent card codes: `KX7M2Q` (Aarav), `PD4B9T` (Ananya)
+- Counter staff: `CNT-01` / `1234`
+- Owner: `ADMIN` / `4321`
 
-## Still to build
+In production (`NODE_ENV=production`) none of these exist: set `COUNTER_PIN`,
+`ADMIN_PIN` and `APP_SECRET` before the first start, and no demo students are created.
 
-- Real auth: card codes checked against the database; admin accounts with roles.
-- Backend for menu, orders, wallet ledger, limits and daily reports.
-- Razorpay checkout on the top-up screen, with webhook-confirmed wallet credits.
-- Charging an order against the scanned card (today it only shows a confirmation).
+## How the money moves
 
-## Structure
+1. **Parent pays** — the server asks Razorpay for an order for exactly the amount
+   chosen, the browser opens Razorpay Checkout, the parent pays by UPI / card /
+   netbanking.
+2. **Razorpay → your bank** — Razorpay collects the payment and settles it into the
+   bank account on your Razorpay dashboard, on its normal settlement schedule. That
+   is how the money reaches the owner. This app does not move bank money itself.
+3. **Wallet is credited** — only after the server verifies the payment, either from
+   the signed callback the browser sends or from Razorpay's signed webhook
+   (whichever arrives first; the second is ignored, so it can never double-credit).
+4. **Counter charge** — scanning a card subtracts the order total from the student's
+   wallet and records a sale. This is a ledger entry: the cash is already in your
+   bank from step 2. The admin **Where the money is** panel shows *paid in*,
+   *spent at the counter* and *still in wallets* so the books can be checked.
+
+Every rule a parent sets (daily limit, per-order cap, blocked categories, blocked
+card) is enforced on the server at charge time, inside the same transaction as the
+debit. Amounts are stored as integer paise, and the wallet ledger always adds up to
+the balance (tested).
+
+## Razorpay setup
+
+1. Create a Razorpay account and open **Account & Settings → API Keys**. Generate
+   **test** keys first (`rzp_test_…`).
+2. Put them in `.env`:
+   ```
+   RAZORPAY_KEY_ID=rzp_test_xxxxxxxx
+   RAZORPAY_KEY_SECRET=xxxxxxxx
+   ```
+   The secret stays on the server. Only the public key id is ever sent to the browser.
+3. **Webhook** (so a payment is credited even if the parent closes the tab): in the
+   dashboard go to **Webhooks → Add**, URL `https://YOUR-DOMAIN/api/razorpay/webhook`,
+   event `payment.captured`, choose a secret and put it in
+   `RAZORPAY_WEBHOOK_SECRET`. For local testing use a tunnel such as ngrok.
+4. Restart the server. The startup log says `Razorpay: test keys loaded`.
+5. Pay with Razorpay's test UPI / card details. Move to live keys only after a full test.
+
+## Before real money
+
+- **Use HTTPS.** Browsers only allow the camera on `https` or `localhost`.
+- Set `NODE_ENV=production`, a long random `APP_SECRET`, `COUNTER_PIN` and `ADMIN_PIN`.
+- Back up `server/data/happybites.db` (it is the ledger). It is git-ignored.
+- Menu prices and offers still live in each browser (localStorage), and the counter
+  sends the prices it shows. Move the menu to the server before running several
+  counters, so every till shows the same prices and the server can price orders itself.
+- Students are demo data. A production import (name, class, student ID, secret code)
+  and printed cards with the QR are still to do.
+- Not built yet: refunds, receipts / SMS, Razorpay payouts reconciliation reports,
+  card re-issue when a secret code is lost.
+
+## Layout
 
 ```
-src/
-  App.jsx               routes for the three sides
-  data/menu.js          menu (from the printed board), children + card codes, offers, trends
-  store/MenuStore.jsx   shared menu + offers, saved to localStorage
-  components/           FoodArt (dish illustrations), NavLogins, MenuSection, FoodCard,
-                        OrderModal, ParentLayout, AdminLayout, Icons
-  pages/CounterPage.jsx canteen counter
-  pages/parent/         Login (card code), Children, ChildDetail, TopUp, Limits, Activity
-  pages/admin/          Login, Dashboard, Items, Offers
-  styles/index.css      design tokens + all styling
+server/            Express API, SQLite ledger, Razorpay, tests
+  wallet.js        top-ups and charges (all the money rules)
+  razorpay.js      orders and signature checks
+  reports.js       owner dashboard queries
+  test/            payment tests against a fake Razorpay
+src/               React app
+  api/client.js    talks to the server
+  pages/           counter, parent/, admin/
+public/icons/      dish pictures (built by tools/)
 ```

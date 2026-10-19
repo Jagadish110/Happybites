@@ -10,9 +10,13 @@ export default function Children() {
 
   const total = kids.reduce((n, c) => n + c.balance, 0)
 
-  const submit = (e) => {
+  const [busy, setBusy] = useState(false)
+
+  const submit = async (e) => {
     e.preventDefault()
-    const err = linkChild(code)
+    setBusy(true)
+    const err = await linkChild(code)
+    setBusy(false)
     if (err) { setError(err); return }
     setCode('')
     setError('')
@@ -85,7 +89,9 @@ export default function Children() {
             </label>
             {error && <p className="form-error">{error}</p>}
             <div className="kid-actions">
-              <button className="btn" type="submit" disabled={code.trim().length < 6}>Link card</button>
+              <button className="btn" type="submit" disabled={code.trim().length < 6 || busy}>
+                {busy ? 'Linking…' : 'Link card'}
+              </button>
               <button className="btn ghost" type="button" onClick={() => { setAdding(false); setError('') }}>
                 Cancel
               </button>

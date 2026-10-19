@@ -65,7 +65,7 @@ export default function CardScanner({ open, amount, onClose, onScan }) {
 
     const watch = async () => {
       if (!('BarcodeDetector' in window)) {
-        setDetail('This browser cannot read codes automatically — type the card number below.')
+        setDetail('This browser cannot read codes automatically — type the student ID below.')
         return
       }
       const detector = new window.BarcodeDetector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13'] })
@@ -133,16 +133,16 @@ export default function CardScanner({ open, amount, onClose, onScan }) {
             <div className="scan-msg">
               {status === 'starting' && <p>Asking for the camera…</p>}
               {status === 'denied' && (
-                <p>Camera permission was refused. Allow it in the browser&rsquo;s address bar, or key the card number in below.</p>
+                <p>Camera permission was refused. Allow it in the browser&rsquo;s address bar, or type the student ID in below.</p>
               )}
               {status === 'insecure' && (
                 <p>
                   The camera only opens on <strong>https</strong> or <strong>localhost</strong>. On a plain
-                  http address the browser blocks it — key the card number in below for now.
+                  http address the browser blocks it — type the student ID in below for now.
                 </p>
               )}
               {status === 'unsupported' && (
-                <p>No camera available here{detail ? ` (${detail})` : ''}. Key the card number in below.</p>
+                <p>No camera available here{detail ? ` (${detail})` : ''}. Type the student ID in below.</p>
               )}
             </div>
           )}
@@ -152,12 +152,12 @@ export default function CardScanner({ open, amount, onClose, onScan }) {
           <p className="scan-hint">
             {status === 'live'
               ? 'Hold the card’s QR code inside the frame'
-              : 'Camera unavailable — enter the number printed on the card'}
+              : 'Camera unavailable — type the student ID printed on the card'}
           </p>
 
           <form className="scan-manual" onSubmit={submitManual}>
             <input
-              type="text" placeholder="HB-2024-0518 or card code"
+              type="text" placeholder="Student ID, e.g. HB-2024-0518"
               value={manual} onChange={(e) => setManual(e.target.value)}
             />
             <button className="btn" type="submit" disabled={manual.trim().length < 4}>

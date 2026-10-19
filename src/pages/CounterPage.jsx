@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import MenuSection from '../components/MenuSection.jsx'
 import OrderModal from '../components/OrderModal.jsx'
@@ -6,7 +6,9 @@ import CardScanner from '../components/CardScanner.jsx'
 import NavLogins from '../components/NavLogins.jsx'
 import OfferSection from '../components/OfferSection.jsx'
 import { CategoryIcon, CloseIcon, SearchIcon } from '../components/Icons.jsx'
-import { CATEGORIES, findChildByCard } from '../data/menu.js'
+import { CATEGORIES } from '../data/menu.js'
+import { ChargeResult, StaffSignInDialog } from '../components/ChargeDialogs.jsx'
+import { api, getToken } from '../api/client.js'
 import { useMenu } from '../store/MenuStore.jsx'
 
 /** Canteen counter. Staff build an order with + / −, then charge the card. */
@@ -18,7 +20,16 @@ export default function CounterPage() {
   const [order, setOrder] = useState({})
   const [orderOpen, setOrderOpen] = useState(false)
   const [scanning, setScanning] = useState(false)
+  const [signingIn, setSigningIn] = useState(false)
+  const [staff, setStaff] = useState(null)
+  const [result, setResult] = useState(null)
+  const attemptKey = useRef('')
   const [toast, setToast] = useState('')
+
+  // pick up a staff session that is already open in this tab
+  useEffect(() => {
+    if (getToken('staff')) api.staff.me().then(setStaff).catch(() => setStaff(null))
+  }, [])
 
   const say = (msg) => {
     setToast(msg)
@@ -59,28 +70,55 @@ export default function CounterPage() {
   const count = lines.reduce((n, l) => n + l.qty, 0)
   const total = lines.reduce((n, l) => n + l.qty * l.item.price, 0)
 
-  // charging starts with a card scan; the camera reads the student's QR
+  // Charging starts by proving who is at the till, then scanning the student's card.
+  // One id per order attempt, so a retry after a dropped connection cannot charge twice.
   const charge = () => {
     setOrderOpen(false)
-    setScanning(true)
+    if (!attemptKey.current) attemptKey.current = crypto.randomUUID()
+    if (getToken('staff')) setScanning(true)
+    else setSigningIn(true)
   }
 
-  const onScanned = (value) => {
+  const onScanned = useCallback(async (cardId) => {
     setScanning(false)
-    const child = findChildByCard(value)
+    setResult({ status: 'busy', title: 'Charging…', detail: 'Checking the card' })
 
-    if (!child) {
-      say(`Card ${value} is not registered — try again`)
-      return
+    try {
+      const out = await api.charge({
+        cardId,
+        total,
+        idempotencyKey: attemptKey.current,
+        items: lines.map(({ item, qty }) => ({
+          id: String(item.id), name: item.name, price: item.price, qty, cat: item.cat || '',
+        })),
+      })
+      attemptKey.current = ''
+      setOrder({})
+      setResult({
+        status: 'ok',
+        title: `₹${out.total} charged`,
+        detail: `${out.student.name} · balance now ₹${out.student.balance}`,
+      })
+    } catch (err) {
+      if (err.status === 401) {
+        setResult(null)
+        setStaff(null)
+        setSigningIn(true)                       // the shift session ended; sign in and carry on
+        return
+      }
+      const unsure = err.code === 'network'
+      setResult({
+        status: 'fail',
+        title: unsure ? 'Could not confirm the charge' : 'Not charged',
+        detail: unsure
+          ? 'Scan the same card again to retry. It will not be charged twice.'
+          : err.message,
+      })
     }
-    if (child.balance < total) {
-      say(`${child.name} has only ₹${child.balance} — ₹${total - child.balance} short`)
-      return
-    }
+  }, [lines, total])
 
-    say(`₹${total} charged to ${child.name} · balance ₹${child.balance - total}`)
-    setOrder({})
-  }
+  // a different basket is a different payment
+  useEffect(() => { attemptKey.current = '' }, [total, count])
 
   // "/" puts the cursor in the search box, so staff never reach for the mouse
   useEffect(() => {
@@ -151,7 +189,7 @@ export default function CounterPage() {
             )}
           </div>
 
-          <NavLogins />
+          <NavLogins staff={staff} onSignOut={async () => { await api.staff.logout().catch(() => {}); setStaff(null) }} />
         </div>
       </header>
 
@@ -213,6 +251,14 @@ export default function CounterPage() {
         onClose={() => setScanning(false)}
         onScan={onScanned}
       />
+
+      <StaffSignInDialog
+        open={signingIn}
+        onClose={() => setSigningIn(false)}
+        onSignedIn={(me) => { setStaff(me); setSigningIn(false); if (lines.length) setScanning(true) }}
+      />
+
+      <ChargeResult state={result} onClose={() => setResult(null)} />
 
       <div className={'toast' + (toast ? ' show' : '')}>{toast}</div>
     </>

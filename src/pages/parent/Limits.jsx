@@ -1,16 +1,32 @@
 import { useState } from 'react'
 import { Link, useOutletContext, useParams } from 'react-router-dom'
-import { CATEGORIES, getChild, LIMIT_PRESETS } from '../../data/menu.js'
+import { CATEGORIES, LIMIT_PRESETS } from '../../data/menu.js'
+import { api } from '../../api/client.js'
 import { CategoryIcon } from '../../components/Icons.jsx'
 
 export default function Limits() {
   const { id } = useParams()
-  const { say } = useOutletContext()
-  const kid = getChild(id)
+  const { say, children, update } = useOutletContext()
+  const kid = children.find((c) => c.id === id) || children[0]
 
   const [daily, setDaily] = useState(kid.dailyLimit)
   const [cap, setCap] = useState(kid.perOrderCap)
   const [blocked, setBlocked] = useState(kid.blocked)
+
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const fresh = await api.parent.setLimits(kid.id, { dailyLimit: daily, perOrderCap: cap, blocked })
+      update(fresh)
+      say(`Limits saved for ${kid.name}. The counter follows them straight away.`)
+    } catch (err) {
+      say(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const toggle = (catId) =>
     setBlocked((b) => (b.includes(catId) ? b.filter((x) => x !== catId) : [...b, catId]))
@@ -70,11 +86,11 @@ export default function Limits() {
         })}
       </div>
 
-      <button className="btn block" onClick={() => say('Limits saved for ' + kid.name)}>
-        Save limits
+      <button className="btn block" disabled={saving} onClick={save}>
+        {saving ? 'Saving…' : 'Save limits'}
       </button>
       <p className="muted" style={{ textAlign: 'center', marginTop: 10 }}>
-        Saving is local to this demo until the backend is connected.
+        The counter checks these every time {kid.name.split(' ')[0]}&rsquo;s card is charged.
       </p>
     </div>
   )

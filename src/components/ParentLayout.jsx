@@ -1,56 +1,62 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import { UsersIcon, ClockIcon } from './Icons.jsx'
 import Login from '../pages/parent/Login.jsx'
-import { CHILDREN, findChildByCode } from '../data/menu.js'
+import { api, getToken } from '../api/client.js'
 
-const KEY = 'hb_parent_cards'
-
-/** Everything under /parent lives here. A card's secret code is the login —
- *  entering more codes links more children to the same session. */
+/** Everything under /parent lives here. A card's secret code is the login and
+ *  the server holds the wallets; entering more codes links more children. */
 export default function ParentLayout() {
-  const [linked, setLinked] = useState(() => {
-    try {
-      const saved = JSON.parse(sessionStorage.getItem(KEY) || '[]')
-      return CHILDREN.filter((c) => saved.includes(c.id))
-    } catch { return [] }
-  })
+  const [students, setStudents] = useState(null)               // null = still checking the session
   const [toast, setToast] = useState('')
-
-  const save = (list) => {
-    try { sessionStorage.setItem(KEY, JSON.stringify(list.map((c) => c.id))) } catch { /* private mode */ }
-  }
 
   const say = useCallback((msg) => {
     setToast(msg)
     window.clearTimeout(say._t)
-    say._t = window.setTimeout(() => setToast(''), 2600)
+    say._t = window.setTimeout(() => setToast(''), 3200)
   }, [])
 
-  const signIn = (child) => {
-    const list = [child]
-    setLinked(list)
-    save(list)
+  useEffect(() => {
+    if (!getToken('parent')) { setStudents([]); return }
+    api.parent.students().then(setStudents).catch(() => setStudents([]))
+  }, [])
+
+  /** Swap one student in the list for their fresh copy from the server. */
+  const update = useCallback((fresh) => {
+    setStudents((list) => (list || []).map((s) => (s.id === fresh.id ? fresh : s)))
+  }, [])
+
+  const refresh = useCallback(async () => {
+    try { setStudents(await api.parent.students()) } catch { /* keep what we have */ }
+  }, [])
+
+  /** Returns an error message, or null on success. */
+  const signIn = async (code) => {
+    try {
+      setStudents(await api.parent.login(code))
+      return null
+    } catch (err) {
+      return err.message
+    }
   }
 
-  /** Link another card by its secret code. Returns an error string, or null. */
-  const linkChild = (code) => {
-    const child = findChildByCode(code)
-    if (!child) return 'No card found with that code.'
-    if (linked.some((c) => c.id === child.id)) return `${child.name} is already linked.`
-    const list = [...linked, child]
-    setLinked(list)
-    save(list)
-    say(`${child.name} linked to your account`)
-    return null
+  const linkChild = async (code) => {
+    try {
+      const child = await api.parent.link(code)
+      setStudents((list) => [...(list || []), child])
+      say(`${child.name} linked to your account`)
+      return null
+    } catch (err) {
+      return err.message
+    }
   }
 
-  const signOut = () => {
-    try { sessionStorage.removeItem(KEY) } catch { /* private mode */ }
-    setLinked([])
+  const signOut = async () => {
+    try { await api.parent.logout() } catch { /* the token is cleared either way */ }
+    setStudents([])
   }
 
-  const signedIn = linked.length > 0
+  const signedIn = Boolean(students && students.length)
 
   return (
     <>
@@ -76,8 +82,8 @@ export default function ParentLayout() {
               </nav>
               <span className="spacer" />
               <div className="who">
-                <span className="who-name">{linked.length} card{linked.length === 1 ? '' : 's'} linked</span>
-                <span className="who-phone">{linked.map((c) => c.name.split(' ')[0]).join(', ')}</span>
+                <span className="who-name">{students.length} card{students.length === 1 ? '' : 's'} linked</span>
+                <span className="who-phone">{students.map((c) => c.name.split(' ')[0]).join(', ')}</span>
               </div>
               <button className="btn ghost small" onClick={signOut}>Sign out</button>
             </>
@@ -90,9 +96,13 @@ export default function ParentLayout() {
         </div>
       </header>
 
-      {signedIn
-        ? <Outlet context={{ say, children: linked, linkChild }} />
-        : <Login onSignIn={signIn} />}
+      {students === null ? (
+        <div className="page"><p className="empty">Loading…</p></div>
+      ) : signedIn ? (
+        <Outlet context={{ say, children: students, linkChild, update, refresh }} />
+      ) : (
+        <Login onSignIn={signIn} />
+      )}
 
       <footer className="foot">
         <span>Happybites parent portal</span>

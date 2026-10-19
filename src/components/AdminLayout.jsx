@@ -1,15 +1,11 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import { BarChartIcon, UtensilsIcon, TagIcon } from './Icons.jsx'
 import AdminLogin from '../pages/admin/Login.jsx'
-import { STAFF } from '../data/menu.js'
-
-const KEY = 'hb_admin_session'
+import { api, getToken } from '../api/client.js'
 
 export default function AdminLayout() {
-  const [signedIn, setSignedIn] = useState(() => {
-    try { return sessionStorage.getItem(KEY) === '1' } catch { return false }
-  })
+  const [staff, setStaff] = useState(undefined)          // undefined = checking, null = signed out
   const [toast, setToast] = useState('')
 
   const say = useCallback((msg) => {
@@ -18,14 +14,17 @@ export default function AdminLayout() {
     say._t = window.setTimeout(() => setToast(''), 2600)
   }, [])
 
-  const signIn = () => {
-    try { sessionStorage.setItem(KEY, '1') } catch { /* private mode */ }
-    setSignedIn(true)
+  useEffect(() => {
+    if (!getToken('staff')) { setStaff(null); return }
+    api.staff.me().then((me) => setStaff(me.role === 'admin' ? me : null)).catch(() => setStaff(null))
+  }, [])
+
+  const signOut = async () => {
+    try { await api.staff.logout() } catch { /* token is cleared either way */ }
+    setStaff(null)
   }
-  const signOut = () => {
-    try { sessionStorage.removeItem(KEY) } catch { /* private mode */ }
-    setSignedIn(false)
-  }
+
+  const signedIn = Boolean(staff)
 
   return (
     <>
@@ -55,8 +54,8 @@ export default function AdminLayout() {
               </nav>
               <span className="spacer" />
               <div className="who">
-                <span className="who-name">{STAFF.name}</span>
-                <span className="who-phone">{STAFF.staffId} · {STAFF.counter}</span>
+                <span className="who-name">{staff.name}</span>
+                <span className="who-phone">{staff.id} · Owner</span>
               </div>
               <Link className="btn ghost small" to="/">Counter</Link>
               <button className="btn ghost small" onClick={signOut}>Sign out</button>
@@ -70,7 +69,13 @@ export default function AdminLayout() {
         </div>
       </header>
 
-      {signedIn ? <Outlet context={{ say }} /> : <AdminLogin onSignIn={signIn} />}
+      {staff === undefined ? (
+        <div className="page"><p className="empty">Loading…</p></div>
+      ) : signedIn ? (
+        <Outlet context={{ say, staff }} />
+      ) : (
+        <AdminLogin onSignIn={setStaff} />
+      )}
 
       <footer className="foot">
         <span>Happybites admin</span>

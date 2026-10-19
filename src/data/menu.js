@@ -69,93 +69,12 @@ export const ITEMS = [
     note: '5 fruits, 1 vegetable, sprouts & nuts, 1 egg', art: 'bowl', artProps: { level: 3 } },
 ]
 
-// ---------- parent portal ----------
-
-export const PARENT = { name: 'Priya Sharma', phone: '+91 98765 43210' }
-
-// Children linked to this parent account.
-export const CHILDREN = [
-  {
-    id: 'HB-2024-0518',
-    secretCode: 'KX7M2Q',
-    name: 'Aarav Sharma',
-    klass: 'Class 9-B · Roll 18',
-    avatar: '🧑‍🎓',
-    balance: 420,
-    dailyLimit: 150,
-    perOrderCap: 90,
-    spentToday: 32,
-    cardActive: true,
-    blocked: [],
-    lastSpend: 'Today · ₹32',
-    transactions: [
-      { id: 'a1', kind: 'out', title: 'Tea, Veg Puff', sub: 'Today · 9:12 am · Counter 2', amount: 32 },
-      { id: 'a2', kind: 'in', title: 'Wallet top-up', sub: 'Yesterday · UPI · Priya', amount: 500 },
-      { id: 'a3', kind: 'out', title: 'French Fries', sub: 'Yesterday · 1:05 pm · Counter 1', amount: 69 },
-      { id: 'a4', kind: 'out', title: 'Potato Samosa, Tea', sub: '15 Oct · 4:30 pm · Counter 2', amount: 27 },
-      { id: 'a5', kind: 'in', title: 'Wallet top-up', sub: '13 Oct · UPI · Priya', amount: 300 },
-    ],
-  },
-  {
-    id: 'HB-2024-0732',
-    secretCode: 'PD4B9T',
-    name: 'Ananya Sharma',
-    klass: 'Class 6-A · Roll 04',
-    avatar: '👧',
-    balance: 60,
-    dailyLimit: 120,
-    perOrderCap: 70,
-    spentToday: 49,
-    cardActive: true,
-    blocked: ['snacks'],
-    lastSpend: 'Today · ₹49',
-    transactions: [
-      { id: 'n1', kind: 'out', title: 'Simple Pack bowl', sub: 'Today · 8:55 am · Counter 1', amount: 49 },
-      { id: 'n2', kind: 'out', title: 'Watermelon juice', sub: 'Yesterday · 1:20 pm · Counter 1', amount: 69 },
-      { id: 'n3', kind: 'in', title: 'Wallet top-up', sub: '14 Oct · UPI · Priya', amount: 250 },
-      { id: 'n4', kind: 'out', title: 'Cake, Tea', sub: '14 Oct · 9:02 am · Counter 2', amount: 22 },
-    ],
-  },
-]
+// ---------- parent top-up and limit presets ----------
 
 export const TOPUP_PRESETS = [200, 500, 1000, 1500, 2000, 3000]
 export const LIMIT_PRESETS = [80, 100, 120, 150, 200, 250]
 
-export const getChild = (id) => CHILDREN.find((c) => c.id === id) || CHILDREN[0]
-
-/** A scanned card may carry the student ID or the secret code on its back. */
-export const findChildByCard = (value) => {
-  const v = String(value).trim().toLowerCase()
-  return CHILDREN.find(
-    (c) => c.id.toLowerCase() === v || c.secretCode.toLowerCase() === v
-  )
-}
-
-export const findChildByCode = (code) =>
-  CHILDREN.find((c) => c.secretCode.toLowerCase() === String(code).trim().toLowerCase())
-
-// ---------- admin / counter ----------
-
-export const STAFF = { name: 'Lakshmi R.', staffId: 'CNT-01', counter: 'Counter 1' }
-
-export const COUNTER_TODAY = {
-  orders: 184,
-  revenue: 9240,
-  itemsSold: 412,
-  avgOrder: 50,
-  target: 12000,
-  bestDay: 'Wednesday',
-}
-
-// itemId -> units sold today
-export const TOP_SELLERS = [
-  { id: 't1', icon: '/icons/tea.png', sold: 96, art: 'chai' },
-  { id: 's2', icon: '/icons/french_fries.png', sold: 71, art: 'fries' },
-  { id: 't10', icon: '/icons/veg_puff.png', sold: 64, art: 'puff' },
-  { id: 'j1', icon: '/icons/watermelon_juice.png', sold: 48, art: 'juice', artProps: { tone: '#f0565c' } },
-  { id: 's11', icon: '/icons/maggie.png', sold: 42, art: 'noodles' },
-  { id: 'b1', icon: '/icons/simple_pack.png', sold: 35, art: 'bowl', artProps: { level: 1 } },
-]
+// ---------- offers (managed in the admin portal) ----------
 
 export const OFFERS = [
   {
@@ -173,45 +92,3 @@ export const OFFERS = [
 ]
 
 export const getItem = (id) => ITEMS.find((i) => i.id === id)
-
-// Sales trend for the admin dashboard. Each view is a plain list of bars.
-export const TRENDS = {
-  daily: {
-    label: 'Last 7 days',
-    note: 'Best day Wednesday',
-    unit: 'day',
-    bars: [
-      { label: 'Fri', v: 8120 }, { label: 'Sat', v: 4240 }, { label: 'Sun', v: 2160 },
-      { label: 'Mon', v: 9860 }, { label: 'Tue', v: 9450 }, { label: 'Wed', v: 11320 },
-      { label: 'Today', v: 9240, now: true },
-    ],
-  },
-  weekly: {
-    label: 'Last 6 weeks',
-    note: 'Up 12% on last week',
-    unit: 'week',
-    bars: [
-      { label: 'W36', v: 41200 }, { label: 'W37', v: 44600 }, { label: 'W38', v: 38900 },
-      { label: 'W39', v: 49250 }, { label: 'W40', v: 47800 }, { label: 'This week', v: 53600, now: true },
-    ],
-  },
-  monthly: {
-    label: 'Last 6 months',
-    note: 'October tracking ahead of September',
-    unit: 'month',
-    bars: [
-      { label: 'May', v: 148000 }, { label: 'Jun', v: 102400 }, { label: 'Jul', v: 162300 },
-      { label: 'Aug', v: 178900 }, { label: 'Sep', v: 169200 }, { label: 'Oct', v: 128400, now: true },
-    ],
-  },
-}
-
-// Everything the canteen has taken since it opened.
-export const LIFETIME = {
-  since: '12 June 2023',
-  total: 5468300,
-  orders: 126840,
-  students: 1240,
-  thisYear: 1664200,
-  bestMonth: { label: 'August 2026', v: 178900 },
-}
