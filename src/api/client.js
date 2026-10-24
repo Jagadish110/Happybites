@@ -73,6 +73,8 @@ export const api = {
     },
     topupOrder: (studentId, amount) =>
       request('/parent/topup/order', { method: 'POST', body: { studentId, amount }, as: 'parent' }),
+    testPay: (orderId, method, outcome) =>
+      request('/parent/topup/test-pay', { method: 'POST', body: { orderId, method, outcome }, as: 'parent' }),
     topupVerify: (payload) =>
       request('/parent/topup/verify', { method: 'POST', body: payload, as: 'parent' }),
   },

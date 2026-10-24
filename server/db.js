@@ -130,6 +130,11 @@ CREATE TABLE IF NOT EXISTS offers (
 );
 `)
 
+// Older databases were created before orders recorded which gateway made them.
+if (!db.prepare('PRAGMA table_info(topup_orders)').all().some((c) => c.name === 'gateway')) {
+  db.exec("ALTER TABLE topup_orders ADD COLUMN gateway TEXT NOT NULL DEFAULT 'razorpay'")
+}
+
 const nowIso = () => new Date().toISOString()
 
 // ---- first-run seed ------------------------------------------------------

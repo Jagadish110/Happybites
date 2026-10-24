@@ -130,6 +130,7 @@ export function adminSummary() {
   const wallet = db.prepare(
     `SELECT
        COALESCE((SELECT SUM(amount_paise) FROM wallet_ledger WHERE kind = 'topup' AND ref LIKE 'pay_%'), 0) AS collected,
+       COALESCE((SELECT SUM(amount_paise) FROM wallet_ledger WHERE kind = 'topup' AND ref LIKE 'test_pay_%'), 0) AS test_credited,
        COALESCE((SELECT SUM(amount_paise) FROM wallet_ledger WHERE kind = 'purchase'), 0) AS spent,
        COALESCE((SELECT SUM(balance_paise) FROM students), 0) AS outstanding`
   ).get()
@@ -155,6 +156,7 @@ export function adminSummary() {
     },
     wallet: {
       collected: rupees(wallet.collected),
+      testCredited: rupees(wallet.test_credited),
       spent: rupees(wallet.spent),
       outstanding: rupees(wallet.outstanding),
     },

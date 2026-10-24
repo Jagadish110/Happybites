@@ -26,8 +26,12 @@ export default function CounterPage() {
   const attemptKey = useRef('')
   const [toast, setToast] = useState('')
 
-  // pick up a staff session that is already open in this tab
+  // In testing the server runs with open access: anyone at the counter can scan, no sign-in.
+  const [openAccess, setOpenAccess] = useState(null)
+
   useEffect(() => {
+    api.meta().then((m) => setOpenAccess(m.openAccess)).catch(() => setOpenAccess(false))
+    // pick up a staff session that is already open in this tab (only used when sign-in is required)
     if (getToken('staff')) api.staff.me().then(setStaff).catch(() => setStaff(null))
   }, [])
 
@@ -101,7 +105,7 @@ export default function CounterPage() {
   const charge = () => {
     setOrderOpen(false)
     if (!attemptKey.current) attemptKey.current = crypto.randomUUID()
-    if (getToken('staff')) setScanning(true)
+    if (openAccess || getToken('staff')) setScanning(true)
     else setSigningIn(true)
   }
 

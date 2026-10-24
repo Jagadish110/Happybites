@@ -10,7 +10,7 @@
     "server": "node --env-file-if-exists=.env server/index.js",
     "start": "node --env-file-if-exists=.env server/index.js",
     "dev:all": "concurrently -k -n web,api -c magenta,cyan \"vite --host --port 5180 --strictPort\" \"npm run server\"",
-    "test:server": "node --test server/test/payments.test.js"
+    "test:server": "node --test \"server/test/*.test.js\""
   },
   "dependencies": {
     "express": "^4.22.3",

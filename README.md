@@ -14,8 +14,9 @@ cp .env.example .env        # then fill it in (see "Razorpay setup")
 npm run dev:all             # website on :5180, API on :8787
 ```
 
-Open http://localhost:5180/. Without a `.env` it still runs in demo mode (see
-"Demo logins"), but **top-ups stay off until Razorpay keys are added**.
+Open http://localhost:5180/. Without a `.env` it runs in demo mode (see "Demo logins")
+and top-ups use a **simulated test checkout** (see "Test checkout"), so the whole flow
+can be tried before any Razorpay account exists.
 
 | Command | What it does |
 | --- | --- |
@@ -28,7 +29,7 @@ Open http://localhost:5180/. Without a `.env` it still runs in demo mode (see
 
 | Route | Who | What it does |
 | --- | --- | --- |
-| `/` | Counter staff | Tap dishes, search, then **Scan card & charge**. Staff sign in once per shift; the camera reads the student's QR (student ID), with manual entry as a fallback. |
+| `/` | Counter | Tap dishes, search, then **Scan card & charge**. No staff ID or password: anyone at the counter can scan. The camera reads the student's QR (student ID), with manual entry as a fallback. |
 | `/parent` | Parents | Sign in with the secret code on the back of the card. See the wallet and history, **top up through Razorpay**, set daily / per-order limits and blocked categories, block the card. |
 | `/admin` | Owner | Owner PIN only. Today's sales, all-time earnings, day / week / month trend, most-selling items, and **where the money is**. Add and edit dishes (name, price, photo), mark sold out, create and switch offers. |
 
@@ -37,6 +38,18 @@ Open http://localhost:5180/. Without a `.env` it still runs in demo mode (see
 - Parent card codes: `KX7M2Q` (Aarav), `PD4B9T` (Ananya)
 - Counter staff: `CNT-01` / `1234`
 - Owner: `ADMIN` / `4321`
+
+### Testing mode: open access
+
+While the app is being tested, sign-in is switched off: the counter needs no staff login,
+`/admin` opens with any ID and PIN (or none), and `/parent` opens with any code. A real
+card code still opens just that child; anything else shows the first demo students.
+Prices, parent limits, blocked cards and balances are still enforced on the server.
+
+It is on by default in development and **off in production**. Control it with
+`HB_OPEN_ACCESS=1` (on) or `HB_OPEN_ACCESS=0` (off, the demo logins below apply).
+The startup log says which mode is running. Turn it off before real students use it:
+with it on, anyone who can reach the server can charge a card whose student ID they know.
 
 In production (`NODE_ENV=production`) none of these exist: set `COUNTER_PIN`,
 `ADMIN_PIN` and `APP_SECRET` before the first start, and no demo students are created.
@@ -70,6 +83,24 @@ card) is enforced on the server at charge time, inside the same transaction as t
 debit. Amounts are stored as integer paise, and the wallet ledger always adds up to
 the balance (tested).
 
+## Test checkout (no Razorpay account needed)
+
+With no Razorpay keys, the top-up page shows a **Test mode** banner and **Pay** opens a
+simulated Razorpay-style window: pick Google Pay, PhonePe, Paytm, BHIM, card, netbanking
+or wallet, approve, and the wallet is credited. A "Simulate a declined payment" tick
+shows the failure screen. It goes through the same order, pay and verify steps as the
+real thing, so switching to Razorpay changes nothing else.
+
+It is safe by construction:
+
+- It only exists in development. With `NODE_ENV=production` it is off even if
+  `HB_TEST_GATEWAY=1` is set, and it switches itself off as soon as real Razorpay keys
+  are present. Set `HB_TEST_GATEWAY=0` to turn it off in development too.
+- Simulated money is labelled **TEST payment** in the parent history, and is never
+  counted in the owner "Paid in by parents" figure. The admin dashboard shows a separate
+  note with the test amount.
+- Tests (`npm run test:server`) check both the flow and the production lockout.
+
 ## Razorpay setup
 
 1. Create a Razorpay account and open **Account & Settings → API Keys**. Generate
@@ -84,7 +115,8 @@ the balance (tested).
    dashboard go to **Webhooks → Add**, URL `https://YOUR-DOMAIN/api/razorpay/webhook`,
    event `payment.captured`, choose a secret and put it in
    `RAZORPAY_WEBHOOK_SECRET`. For local testing use a tunnel such as ngrok.
-4. Restart the server. The startup log says `Razorpay: test keys loaded`.
+4. Restart the server. The startup log says `Razorpay: test keys loaded`, and the
+   simulated checkout switches itself off.
 5. Pay with Razorpay's test UPI / card details. Move to live keys only after a full test.
 
 ## Before real money

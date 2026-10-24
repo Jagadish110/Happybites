@@ -1,6 +1,6 @@
 import express from 'express'
 import { db } from './db.js'
-import { config, isProd } from './config.js'
+import { config, isProd, openAccess } from './config.js'
 import { HttpError, bad, isInt } from './http.js'
 import { hashPin, keyed, throttle, verifyPin } from './security.js'
 import { endSession, issueSession, linkStudent, ownStudent, requireParent, requireStaff } from './auth.js'
@@ -8,6 +8,7 @@ import {
   CATEGORY_IDS, chargeStudent, creditTopup, getStudent, setCardActive, setLimits, studentView,
 } from './wallet.js'
 import * as rzp from './razorpay.js'
+import * as testgw from './testgateway.js'
 import { adminSummary } from './reports.js'
 import {
   createItem, createOffer, menuSnapshot, priceOrder, setItemAvailable, setOfferActive, updateItem,
@@ -22,7 +23,14 @@ const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).cat
 const tooMany = () => new HttpError(429, 'too_many_attempts', 'Too many tries. Wait a few minutes and try again.')
 
 api.get('/meta', (_req, res) => {
-  res.json({ razorpay: rzp.configured(), demo: !isProd, topupMin: config.topupMin, topupMax: config.topupMax })
+  res.json({
+    razorpay: rzp.configured(),
+    testGateway: testgw.enabled(),
+    openAccess: openAccess(),
+    demo: !isProd,
+    topupMin: config.topupMin,
+    topupMax: config.topupMax,
+  })
 })
 
 // ---- parent: card code is the login --------------------------------------
@@ -34,6 +42,17 @@ function studentByCode(raw) {
 }
 
 api.post('/parent/login', (req, res) => {
+  // Open access (testing): whatever is typed opens the portal. A real card code still
+  // opens just that child; anything else opens the first few children in the system.
+  if (openAccess()) {
+    const code = text(req.body?.code, 12).toUpperCase()
+    const match = code.length >= 4 ? db.prepare('SELECT * FROM students WHERE code_hash = ?').get(keyed(code)) : null
+    const rows = match ? [match] : db.prepare('SELECT * FROM students ORDER BY id LIMIT 10').all()
+    if (!rows.length) throw new HttpError(404, 'card_not_found', 'There are no students in the system yet')
+    const token = issueSession('parent', '', rows.map((r) => r.id))
+    return res.json({ token, students: rows.map(studentView) })
+  }
+
   if (!throttle(`parent-login:${req.ip}`, 12, FIFTEEN_MIN)) throw tooMany()
   const row = studentByCode(req.body?.code)
   const token = issueSession('parent', '', [row.id])
@@ -88,12 +107,22 @@ api.post('/parent/topup/order', requireParent, wrap(async (req, res) => {
   if (!isInt(amount, config.topupMin, config.topupMax)) {
     throw bad('invalid_amount', `Enter a whole amount between ₹${config.topupMin} and ₹${config.topupMax}`)
   }
+  const student = getStudent(studentId)
+
+  // No Razorpay keys: in development a simulated gateway stands in; otherwise top-ups stay off.
   if (!rzp.configured()) {
-    throw new HttpError(503, 'razorpay_not_configured',
-      'Online payments are not switched on yet. The canteen needs to add its Razorpay keys.')
+    if (!testgw.enabled()) {
+      throw new HttpError(503, 'razorpay_not_configured',
+        'Online payments are not switched on yet. The canteen needs to add its Razorpay keys.')
+    }
+    const orderId = testgw.newOrderId()
+    db.prepare('INSERT INTO topup_orders (order_id, student_id, amount_paise, gateway, created_at) VALUES (?,?,?,?,?)')
+      .run(orderId, student.id, amount * 100, 'test', new Date().toISOString())
+    return res.json({
+      orderId, amount: amount * 100, currency: 'INR', keyId: testgw.TEST_KEY_ID, studentName: student.name, test: true,
+    })
   }
 
-  const student = getStudent(studentId)
   const order = await rzp.createOrder({
     amountPaise: amount * 100,
     receipt: `tu_${Date.now().toString(36)}`,
@@ -113,12 +142,23 @@ export function settleOrder(order, paymentId) {
     studentId: order.student_id,
     amountPaise: order.amount_paise,
     ref: paymentId,
-    note: 'Wallet top-up via Razorpay',
+    note: order.gateway === 'test' ? 'Wallet top-up (TEST payment)' : 'Wallet top-up via Razorpay',
   })
   db.prepare("UPDATE topup_orders SET status = 'paid', payment_id = ?, paid_at = ? WHERE order_id = ?")
     .run(paymentId, new Date().toISOString(), order.order_id)
   return result
 }
+
+/** Simulated "pay" step. Hands back what Razorpay Checkout would; /verify still decides about the credit. */
+api.post('/parent/topup/test-pay', requireParent, (req, res) => {
+  if (!testgw.enabled()) throw new HttpError(404, 'not_found', 'No such endpoint')
+  const { orderId, method, outcome } = req.body || {}
+  const order = db.prepare('SELECT * FROM topup_orders WHERE order_id = ?').get(text(orderId, 60))
+  if (!order || order.gateway !== 'test') throw new HttpError(404, 'order_not_found', 'No such test order')
+  ownStudent(req, order.student_id)
+  if (order.status === 'paid') throw new HttpError(409, 'already_paid', 'That order has already been paid')
+  res.json(testgw.pay({ orderId: order.order_id, method: text(method, 20), outcome: text(outcome, 10) }))
+})
 
 api.post('/parent/topup/verify', requireParent, (req, res) => {
   const { razorpay_order_id: orderId, razorpay_payment_id: paymentId, razorpay_signature: signature } = req.body || {}
@@ -126,7 +166,10 @@ api.post('/parent/topup/verify', requireParent, (req, res) => {
   if (!order) throw new HttpError(404, 'order_not_found', 'We have no record of that payment order')
   ownStudent(req, order.student_id)
 
-  if (!rzp.verifyPaymentSignature({ orderId, paymentId, signature })) {
+  const genuine = order.gateway === 'test'
+    ? testgw.enabled() && testgw.verify({ orderId, paymentId, signature })
+    : rzp.verifyPaymentSignature({ orderId, paymentId, signature })
+  if (!genuine) {
     throw bad('bad_signature', 'The payment could not be verified, so nothing was added to the wallet')
   }
   const result = settleOrder(order, paymentId)
@@ -145,13 +188,20 @@ export function razorpayWebhook(req, res) {
     const pay = event.payload?.payment?.entity
     const order = pay?.order_id ? db.prepare('SELECT * FROM topup_orders WHERE order_id = ?').get(pay.order_id) : null
     // Only ever credit what we asked Razorpay to collect.
-    if (order && pay.id && pay.amount === order.amount_paise) settleOrder(order, pay.id)
+    if (order && order.gateway !== 'test' && pay.id && pay.amount === order.amount_paise) settleOrder(order, pay.id)
   }
   res.json({ ok: true })      // always 2xx for a signed event, or Razorpay keeps retrying
 }
 
 // ---- staff: counter and admin sign-in --------------------------------------
 api.post('/staff/login', (req, res) => {
+  // Open access (testing): any ID and PIN, even blank, opens the owner area.
+  if (openAccess()) {
+    const owner = db.prepare("SELECT * FROM staff WHERE role = 'admin' ORDER BY id LIMIT 1").get()
+    const token = issueSession('staff', owner.id)
+    return res.json({ token, staff: { id: owner.id, name: owner.name, role: owner.role, counter: owner.counter } })
+  }
+
   const staffId = text(req.body?.staffId, 20).toUpperCase()
   const pin = text(req.body?.pin, 12)
   if (!throttle(`staff-login:${req.ip}:${staffId}`, 8, FIFTEEN_MIN)) throw tooMany()

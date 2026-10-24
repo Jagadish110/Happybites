@@ -1,5 +1,5 @@
 import { db } from './db.js'
-import { config } from './config.js'
+import { config, openAccess } from './config.js'
 import { keyed, newToken } from './security.js'
 import { HttpError } from './http.js'
 
@@ -42,6 +42,20 @@ export function requireParent(req, _res, next) {
 }
 
 export const requireStaff = (...roles) => (req, _res, next) => {
+  if (openAccess()) {
+    // Testing: nobody has to sign in. A real session is still recognised if one was sent.
+    let staff = null
+    let hash = ''
+    try {
+      const s = readSession(req, 'staff')
+      hash = s.token_hash
+      staff = db.prepare('SELECT id, name, role, counter FROM staff WHERE id = ?').get(s.subject)
+    } catch { /* no session: that is fine in open access */ }
+    req.staff = staff || { id: 'OPEN', name: 'Counter', role: 'admin', counter: 'Counter 1' }
+    req.session = { hash }
+    return next()
+  }
+
   const s = readSession(req, 'staff')
   const staff = db.prepare('SELECT id, name, role, counter FROM staff WHERE id = ?').get(s.subject)
   if (!staff) throw unauthorized()

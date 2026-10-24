@@ -38,7 +38,8 @@ export function studentView(row) {
     'SELECT * FROM wallet_ledger WHERE student_id = ? ORDER BY id DESC LIMIT 40'
   ).all(row.id).map((l) => {
     const when = new Date(l.created_at)
-    const where = l.kind === 'purchase' ? l.counter || 'Counter' : l.ref.startsWith('pay_') ? 'Razorpay' : ''
+    const where = l.kind === 'purchase' ? l.counter || 'Counter'
+      : l.ref.startsWith('pay_') ? 'Razorpay' : l.ref.startsWith('test_pay_') ? 'Test payment' : ''
     return {
       id: `l${l.id}`,
       kind: l.kind === 'purchase' ? 'out' : 'in',

@@ -6,6 +6,7 @@ import crypto from 'node:crypto'
 import http from 'node:http'
 
 process.env.HB_DB = ':memory:'
+process.env.HB_OPEN_ACCESS = '0'          // these suites check that sign-in is enforced
 process.env.RAZORPAY_KEY_ID = 'rzp_test_fake'
 process.env.RAZORPAY_KEY_SECRET = 'fake_key_secret'
 process.env.RAZORPAY_WEBHOOK_SECRET = 'fake_hook_secret'

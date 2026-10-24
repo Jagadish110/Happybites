@@ -140,6 +140,15 @@ export default function Dashboard() {
             <span className="muted">Paid in but not yet spent. Students can still use it, so treat it as owed.</span>
           </div>
         </div>
+        {W.testCredited > 0 && (
+          <p className="test-banner" style={{ marginTop: 14, marginBottom: 0 }}>
+            <span aria-hidden="true">🧪</span>
+            <span>
+              <strong>{inr(W.testCredited)}</strong> of the wallet balance came from simulated test
+              payments. It is not real money and is not counted in &ldquo;Paid in by parents&rdquo;.
+            </span>
+          </p>
+        )}
       </div>
 
       <div className="panel">

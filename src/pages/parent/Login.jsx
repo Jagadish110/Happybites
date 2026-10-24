@@ -10,11 +10,14 @@ export default function Login({ onSignIn }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [demo, setDemo] = useState(false)
+  const [open, setOpen] = useState(false)
 
-  useEffect(() => { api.meta().then((m) => setDemo(m.demo)).catch(() => {}) }, [])
+  useEffect(() => {
+    api.meta().then((m) => { setDemo(m.demo); setOpen(m.openAccess) }).catch(() => {})
+  }, [])
 
   const clean = code.trim().toUpperCase()
-  const ready = clean.length >= 6
+  const ready = open || clean.length >= 6        // testing mode accepts any code
 
   const submit = async (e) => {
     e.preventDefault()
@@ -60,6 +63,9 @@ export default function Login({ onSignIn }) {
           <span className="muted">Lost the card? Ask the canteen.</span>
         </div>
 
+        {open && (
+          <p className="auth-demo">Test mode: any code opens the portal. Real demo codes still open just their child.</p>
+        )}
         {demo && (
           <p className="auth-demo">Demo codes — <strong>KX7M2Q</strong> (Aarav) · <strong>PD4B9T</strong> (Ananya)</p>
         )}

@@ -3,6 +3,7 @@ import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom
 import { TOPUP_PRESETS } from '../../data/menu.js'
 import { BankIcon } from '../../components/Icons.jsx'
 import { api } from '../../api/client.js'
+import FakeCheckout from '../../components/FakeCheckout.jsx'
 
 const CHECKOUT_SRC = 'https://checkout.razorpay.com/v1/checkout.js'
 
@@ -28,6 +29,7 @@ export default function TopUp() {
   const [custom, setCustom] = useState('')
   const [busy, setBusy] = useState(false)
   const [meta, setMeta] = useState(null)
+  const [fake, setFake] = useState(null)                 // an open simulated checkout
 
   useEffect(() => { api.meta().then(setMeta).catch(() => setMeta({ razorpay: false, topupMin: 10, topupMax: 10000 })) }, [])
 
@@ -35,12 +37,35 @@ export default function TopUp() {
   const max = meta?.topupMax ?? 10000
   const value = custom ? Number(custom) : amount
   const valid = Number.isInteger(value) && value >= min && value <= max
-  const ready = meta?.razorpay
+  const test = Boolean(meta?.testGateway)
+  const ready = Boolean(meta?.razorpay || test)
+
+  /** Both the real Checkout and the simulated one hand back the same three fields. */
+  const settle = async (response) => {
+    try {
+      const out = await api.parent.topupVerify(response)
+      update(out.student)
+      setFake(null)
+      say(`₹${value.toLocaleString('en-IN')} added to the wallet of ${kid.name}`)
+      navigate(`/parent/${kid.id}`)
+    } catch (err) {
+      // The money has left the parent account; for real payments the webhook still credits it.
+      setFake(null)
+      say(err.status === 400
+        ? err.message
+        : 'Your payment went through, but we could not confirm it just yet. It will be added to the wallet shortly.')
+      setBusy(false)
+    }
+  }
 
   const pay = async () => {
     setBusy(true)
     try {
       const order = await api.parent.topupOrder(kid.id, value)
+      if (order.test) {                                   // no Razorpay keys yet: simulated checkout
+        setFake(order)
+        return
+      }
       await loadCheckout()
 
       const checkout = new window.Razorpay({
@@ -51,20 +76,7 @@ export default function TopUp() {
         name: 'Happy Bites',
         description: `Canteen wallet top-up for ${order.studentName}`,
         theme: { color: '#ea4b2c' },
-        handler: async (response) => {
-          try {
-            const out = await api.parent.topupVerify(response)
-            update(out.student)
-            say(`₹${value} added to ${kid.name}'s wallet`)
-            navigate(`/parent/${kid.id}`)
-          } catch (err) {
-            // The money has left the parent's account; the webhook will still credit it.
-            say(err.status === 400
-              ? err.message
-              : 'Your payment went through, but we could not confirm it just yet. It will be added to the wallet shortly.')
-            setBusy(false)
-          }
-        },
+        handler: settle,
         modal: {
           ondismiss: () => { setBusy(false); say('Payment cancelled. Nothing was charged.') },
         },
@@ -115,6 +127,16 @@ export default function TopUp() {
       <div className="panel">
         <div className="panel-head"><h2>Payment method</h2></div>
 
+        {test && (
+          <div className="test-banner">
+            <span aria-hidden="true">🧪</span>
+            <span>
+              <strong>Test mode.</strong> Payments are simulated, so no real money moves. Add the
+              Razorpay keys to the server to take real payments.
+            </span>
+          </div>
+        )}
+
         <div className="pay-row">
           <span className="pay-bank-ico" aria-hidden="true"><BankIcon width={22} height={22} /></span>
           <div style={{ flex: 1 }}>
@@ -123,7 +145,9 @@ export default function TopUp() {
             </div>
             <div className="muted">Wallet credits as soon as the payment is confirmed</div>
           </div>
-          <span className={'pill' + (ready ? ' green' : '')}>{ready ? 'Secure checkout' : 'Not set up yet'}</span>
+          <span className={'pill' + (test ? ' amber' : ready ? ' green' : '')}>
+            {test ? 'Test mode' : ready ? 'Secure checkout' : 'Not set up yet'}
+          </span>
         </div>
 
         {meta && !ready && (
@@ -136,12 +160,20 @@ export default function TopUp() {
         <div className="summary-line total"><span>Payable now</span><strong>₹{valid ? value : 0}</strong></div>
 
         <button className="btn block" style={{ marginTop: 14 }} disabled={!valid || !ready || busy} onClick={pay}>
-          {busy ? 'Opening payment…' : `Pay ₹${valid ? value : 0}`}
+          {busy ? 'Opening payment…' : `Pay ₹${valid ? value.toLocaleString('en-IN') : 0}`}
         </button>
         <p className="muted" style={{ textAlign: 'center', marginTop: 10 }}>
           Payments are processed by Razorpay. Card and UPI details never touch this site.
         </p>
       </div>
+
+      {fake && (
+        <FakeCheckout
+          order={fake}
+          onPaid={settle}
+          onDismiss={() => { setFake(null); setBusy(false); say('Payment cancelled. Nothing was charged.') }}
+        />
+      )}
     </div>
   )
 }

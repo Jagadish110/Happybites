@@ -12,10 +12,14 @@ export default function StaffSignInForm({ role, onSignedIn, autoFocus = true }) 
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [demo, setDemo] = useState(false)
+  const [open, setOpen] = useState(false)
 
-  useEffect(() => { api.meta().then((m) => setDemo(m.demo)).catch(() => {}) }, [])
+  useEffect(() => {
+    api.meta().then((m) => { setDemo(m.demo); setOpen(m.openAccess) }).catch(() => {})
+  }, [])
 
-  const ready = staffId.trim().length >= 2 && pin.length >= 4
+  // Testing mode: anything typed opens it, so the button is never blocked.
+  const ready = open || (staffId.trim().length >= 2 && pin.length >= 4)
 
   const submit = async (e) => {
     e.preventDefault()
@@ -61,7 +65,9 @@ export default function StaffSignInForm({ role, onSignedIn, autoFocus = true }) 
         {busy ? 'Checking…' : 'Sign in'}
       </button>
 
-      {demo && (
+      {open ? (
+        <p className="auth-demo">Test mode: type anything, or nothing, and it opens.</p>
+      ) : demo && (
         <p className="auth-demo">
           Demo PINs — counter <strong>CNT-01 / 1234</strong> · owner <strong>ADMIN / 4321</strong>
         </p>
