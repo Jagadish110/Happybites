@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CardIcon } from '../../components/Icons.jsx'
-import { findChildByCode } from '../../data/menu.js'
+import { CHILDREN, findChildByCode } from '../../data/menu.js'
 
 /** Sign in with the secret code printed on the back of the student's canteen
  *  card. The code resolves to the student ID held against the account. */
@@ -10,16 +10,10 @@ export default function Login({ onSignIn }) {
   const [error, setError] = useState('')
 
   const clean = code.trim().toUpperCase()
-  const ready = clean.length >= 6
-
   const submit = (e) => {
     e.preventDefault()
-    const child = findChildByCode(clean)
-    if (!child) {
-      setError('No card found with that code. Check the back of the card.')
-      return
-    }
-    onSignIn(child)
+    // preview build: a real code opens that child, anything else opens the first one
+    onSignIn(findChildByCode(clean) || CHILDREN[0])
   }
 
   return (
@@ -49,14 +43,14 @@ export default function Login({ onSignIn }) {
 
         {error && <p className="form-error">{error}</p>}
 
-        <button className="btn block" type="submit" disabled={!ready}>Find my child</button>
+        <button className="btn block" type="submit">Find my child</button>
 
         <div className="auth-row">
           <Link className="link-btn" to="/">&larr; Canteen counter</Link>
           <span className="muted">Lost the card? Ask the canteen.</span>
         </div>
 
-        <p className="auth-demo">Demo codes — <strong>KX7M2Q</strong> (Aarav) · <strong>PD4B9T</strong> (Ananya)</p>
+        <p className="auth-demo">Preview build: any code opens. Try <strong>KX7M2Q</strong> (Aarav) · <strong>PD4B9T</strong> (Ananya)</p>
       </form>
     </div>
   )

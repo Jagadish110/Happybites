@@ -2,12 +2,10 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ShieldIcon } from '../../components/Icons.jsx'
 
-/** Staff ID + PIN. UI only — any ID and any 4-digit PIN get in. */
+/** UI preview: whatever is typed, or nothing at all, opens the admin. */
 export default function AdminLogin({ onSignIn }) {
   const [staffId, setStaffId] = useState('')
   const [pin, setPin] = useState('')
-
-  const ok = staffId.trim().length >= 3 && pin.replace(/\D/g, '').length === 4
 
   return (
     <div className="page auth-page">
@@ -34,14 +32,14 @@ export default function AdminLogin({ onSignIn }) {
           />
         </label>
 
-        <button className="btn block" disabled={!ok} onClick={onSignIn}>Sign in</button>
+        <button className="btn block" onClick={onSignIn}>Sign in</button>
 
         <div className="auth-row">
           <Link className="link-btn" to="/">&larr; Back to counter</Link>
           <span className="muted">Forgot PIN?</span>
         </div>
 
-        <p className="auth-demo">Demo build — any staff ID and any 4-digit PIN will sign you in.</p>
+        <p className="auth-demo">Preview build: type anything, or nothing, and it opens.</p>
       </div>
     </div>
   )
